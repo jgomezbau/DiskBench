@@ -1,8 +1,10 @@
 """Benchmark queue and progress screen."""
 
+import json
 import logging
 import sqlite3
 import time
+from dataclasses import asdict
 from functools import partial
 from threading import Event
 
@@ -14,9 +16,13 @@ from textual.widgets import Button, DataTable, Label, ProgressBar
 from app.models.benchmark import BenchmarkResult, BenchmarkTest, DiskBenchmarkResults
 from app.models.disk import Disk
 from app.services.benchmark import BenchmarkError, FioBenchmarkService
+from app.services.export import HistoryExporter
 from app.services.history import HistoryStore
+from app.services.report import ReportGenerator
 from app.ui.footer import FooterBar
 from app.ui.header import HeaderBar
+from app.ui.results import BenchmarkDetailScreen
+from app.utils.charts import result_charts
 
 LOGGER = logging.getLogger(__name__)
 
@@ -121,6 +127,7 @@ class BenchmarkScreen(Screen[None]):
             disk_name,
             operation,
             completed_tests,
+            total_tests,
             result,
         )
 
@@ -130,13 +137,14 @@ class BenchmarkScreen(Screen[None]):
         disk_name: str,
         operation: str,
         completed_tests: int,
+        total_tests: int,
         result: BenchmarkResult | None,
     ) -> None:
         self.query_one("#benchmark-progress", ProgressBar).update(progress=overall)
         self.query_one("#benchmark-current", Label).update(f"{disk_name} · {operation}")
         remaining = max(len(self.disks) - len(self.completed_results) - 1, 0)
         self.query_one("#benchmark-remaining", Label).update(
-            f"Remaining disks: {remaining} · Test {completed_tests}/4"
+            f"Remaining disks: {remaining} · Completed {completed_tests}/{total_tests}"
         )
         elapsed = time.monotonic() - self.started_at
         estimate = "--" if overall <= 0 else f"{elapsed * (100 / overall - 1):.0f}s"
@@ -168,6 +176,7 @@ class BenchmarkScreen(Screen[None]):
             model=disk.model,
             serial=disk.serial,
             capacity=disk.capacity,
+            interface=disk.interface,
             results=[BenchmarkResult(test=test, error=message) for test in BenchmarkTest],
         )
 
@@ -187,7 +196,12 @@ class BenchmarkScreen(Screen[None]):
 class BenchmarkResultsScreen(Screen[None]):
     """Display completed benchmark results and export shortcuts."""
 
-    BINDINGS = [("escape", "back", "Back"), ("e", "export", "Export"), ("h", "history", "History")]
+    BINDINGS = [
+        ("escape", "back", "Back"),
+        ("e", "export", "Export"),
+        ("h", "history", "History"),
+        ("enter", "details", "Details"),
+    ]
 
     def __init__(
         self,
@@ -197,13 +211,15 @@ class BenchmarkResultsScreen(Screen[None]):
         super().__init__()
         self.results = results
         self.history_store = history_store
+        self.row_results: list[tuple[DiskBenchmarkResults, BenchmarkResult]] = []
 
     def compose(self) -> ComposeResult:
         yield HeaderBar()
         yield Container(
             Label("BENCHMARK RESULTS", classes="section-title"),
-            Label("E exports JSON, CSV, Markdown, and HTML", classes="section-caption"),
+            Label("E exports CSV, JSON, Markdown, HTML and PDF", classes="section-caption"),
             DataTable(id="results-table"),
+            Label(self._charts(), id="results-charts"),
             Label("", id="export-message"),
             id="results-content",
         )
@@ -214,18 +230,27 @@ class BenchmarkResultsScreen(Screen[None]):
         table.add_columns(
             "DISK",
             "MODEL",
+            "CAPACITY",
+            "INTERFACE",
+            "DATE",
+            "RUN DURATION",
             "TEST",
             "THROUGHPUT",
             "IOPS",
             "LATENCY",
-            "DURATION",
+            "TEST DURATION",
             "SCORE",
         )
         for result in self.results:
             for item in result.results:
+                self.row_results.append((result, item))
                 table.add_row(
                     result.disk_name,
                     result.model,
+                    result.capacity,
+                    result.interface,
+                    result.completed_at,
+                    f"{result.duration_seconds:.1f} s",
                     item.test.value,
                     self._throughput(item),
                     f"{item.iops:.0f}",
@@ -233,6 +258,23 @@ class BenchmarkResultsScreen(Screen[None]):
                     f"{item.duration_seconds:.1f} s" if item.success else "--",
                     f"{result.overall_score:.1f}",
                 )
+
+    def _charts(self) -> str:
+        if not self.results:
+            return "No benchmark data"
+        result = self.results[0]
+        by_test = {item.test: item for item in result.results if item.success}
+        return result_charts(
+            [
+                (
+                    test.value,
+                    by_test[test].throughput_mib_per_second if test in by_test else 0,
+                    3500 if "Sequential" in test.value else 1000,
+                    "MiB/s",
+                )
+                for test in by_test
+            ]
+        )
 
     @staticmethod
     def _throughput(result: BenchmarkResult | None) -> str:
@@ -242,24 +284,33 @@ class BenchmarkResultsScreen(Screen[None]):
 
     def action_export(self) -> None:
         """Export the in-memory result set in every supported report format."""
-        from app.services.export import HistoryExporter
-
         records = [
             {
                 "disk": result.disk_name,
                 "model": result.model,
                 "serial": result.serial,
                 "capacity": result.capacity,
+                "interface": result.interface,
                 "completed_at": result.completed_at,
+                "duration_seconds": result.duration_seconds,
                 "overall_score": result.overall_score,
+                "results_json": json.dumps([asdict(item) for item in result.results]),
             }
             for result in self.results
         ]
-        directory = self.history_store.directory
+        directory = self.history_store.output_directory
         destinations = [
             HistoryExporter.export(records, directory, file_format)
             for file_format in ("json", "csv", "md", "html")
         ]
+        destinations.extend(
+            ReportGenerator().generate_pdf(
+                result,
+                directory / f"diskbench-report-{result.disk_name}.pdf",
+                self.history_store.list_runs(),
+            )
+            for result in self.results
+        )
         LOGGER.info("Exported benchmark results to %s", directory)
         self.query_one("#export-message", Label).update(
             f"Exported {len(destinations)} reports to {directory}"
@@ -272,3 +323,10 @@ class BenchmarkResultsScreen(Screen[None]):
 
     def action_back(self) -> None:
         self.app.pop_screen()
+
+    def action_details(self) -> None:
+        """Open the selected workload's complete metric view."""
+        table = self.query_one("#results-table", DataTable)
+        if 0 <= table.cursor_row < len(self.row_results):
+            result, item = self.row_results[table.cursor_row]
+            self.app.push_screen(BenchmarkDetailScreen(result, item))

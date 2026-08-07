@@ -5,6 +5,7 @@ import logging
 import shutil
 import subprocess
 import tempfile
+import time
 from collections.abc import Callable
 from pathlib import Path
 from threading import Event
@@ -18,6 +19,7 @@ from app.models.benchmark import (
     DiskBenchmarkResults,
 )
 from app.models.disk import Disk
+from app.services.scoring import ScoreCalculator
 
 LOGGER = logging.getLogger(__name__)
 Runner = Callable[..., subprocess.CompletedProcess[str]]
@@ -35,9 +37,11 @@ class FioBenchmarkService:
         self,
         config: AppConfig | None = None,
         runner: Runner = subprocess.run,
+        scorer: ScoreCalculator | None = None,
     ) -> None:
         self.config = config or AppConfig()
         self.runner = runner
+        self.scorer = scorer or ScoreCalculator()
 
     def is_available(self) -> bool:
         """Return whether the configured fio executable is available."""
@@ -59,9 +63,11 @@ class FioBenchmarkService:
             model=disk.model,
             serial=disk.serial,
             capacity=disk.capacity,
+            interface=disk.interface,
         )
 
         temporary_path: Path | None = None
+        started_at = time.monotonic()
         try:
             with tempfile.NamedTemporaryFile(
                 prefix=".diskbench-",
@@ -71,17 +77,25 @@ class FioBenchmarkService:
             ) as temporary_file:
                 temporary_path = Path(temporary_file.name)
 
-            total = len(BENCHMARK_SPECS)
-            for index, spec in enumerate(BENCHMARK_SPECS, start=1):
-                if cancel_event is not None and cancel_event.is_set():
-                    LOGGER.info("Benchmark cancelled for %s", disk.name)
-                    raise BenchmarkError("Benchmark cancelled by user")
-                if progress is not None:
-                    progress(spec.test.value, index - 1, total, None)
-                result = self._run_test(temporary_path, spec)
-                results.results.append(result)
-                if progress is not None:
-                    progress(spec.test.value, index, total, result)
+            iterations = max(1, self.config.benchmark_iterations)
+            total = len(BENCHMARK_SPECS) * iterations
+            completed = 0
+            for spec in BENCHMARK_SPECS:
+                samples: list[BenchmarkResult] = []
+                for iteration in range(1, iterations + 1):
+                    if cancel_event is not None and cancel_event.is_set():
+                        LOGGER.info("Benchmark cancelled for %s", disk.name)
+                        raise BenchmarkError("Benchmark cancelled by user")
+                    operation = f"{spec.test.value} ({iteration}/{iterations})"
+                    if progress is not None:
+                        progress(operation, completed, total, None)
+                    sample = self._run_test(temporary_path, spec)
+                    samples.append(sample)
+                    completed += 1
+                    result = self._aggregate(spec, samples)
+                    if progress is not None:
+                        progress(operation, completed, total, result)
+                results.results.append(self._aggregate(spec, samples))
         finally:
             if temporary_path is not None:
                 try:
@@ -93,8 +107,29 @@ class FioBenchmarkService:
                         exc,
                     )
 
-        LOGGER.info("Benchmark completed for %s", disk.name)
+        results.duration_seconds = time.monotonic() - started_at
+        results.score = self.scorer.calculate(results.results)
+        LOGGER.info("Benchmark completed for %s with score %.2f", disk.name, results.score)
         return results
+
+    @staticmethod
+    def _aggregate(spec: BenchmarkSpec, samples: list[BenchmarkResult]) -> BenchmarkResult:
+        """Average repeated measurements while preserving failures."""
+        if not samples or not all(sample.success for sample in samples):
+            errors = "; ".join(sample.error for sample in samples if sample.error)
+            return BenchmarkResult(test=spec.test, error=errors or "Benchmark failed")
+        count = len(samples)
+        return BenchmarkResult(
+            test=spec.test,
+            throughput_bytes_per_second=sum(
+                sample.throughput_bytes_per_second for sample in samples
+            )
+            / count,
+            iops=sum(sample.iops for sample in samples) / count,
+            latency_ms=sum(sample.latency_ms for sample in samples) / count,
+            duration_seconds=sum(sample.duration_seconds for sample in samples),
+            success=True,
+        )
 
     def _run_test(self, filename: Path, spec: BenchmarkSpec) -> BenchmarkResult:
         command = [

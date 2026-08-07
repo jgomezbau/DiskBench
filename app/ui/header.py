@@ -10,4 +10,4 @@ class HeaderBar(Horizontal):
 
     def compose(self) -> ComposeResult:
         yield Label("DISKBENCH", id="brand")
-        yield Label(" HARDWARE INSPECTION  /  v0.5", id="release")
+        yield Label(" RESULTS DASHBOARD  /  v0.6", id="release")

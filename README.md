@@ -1,10 +1,13 @@
 # DiskBench
 
-DiskBench is a Linux-first terminal application for professional storage inspection and safe disk benchmarking. `v0.5` adds a controlled `fio` benchmark engine while retaining the read-only hardware inventory workflow.
+DiskBench is a Linux-first terminal application for professional storage inspection and safe disk benchmarking. `v0.6` adds a results dashboard, scoring, trend history, comparison, reporting and persistent settings to the controlled `fio` benchmark engine.
 
 ## Installation
 
-Python 3.12+, `lsblk` from util-linux, and a Linux system are required. `smartmontools` and `nvme-cli` are optional system packages.
+Python 3.12+, `lsblk` from util-linux, and a Linux system are required. The
+Python dependencies include Textual, Rich, psutil and ReportLab. `fio` is
+required for benchmark execution; `smartmontools` and `nvme-cli` are optional
+system packages.
 
 ```bash
 python3 -m venv .venv
@@ -62,6 +65,24 @@ the worker and keeps the benchmark screen available with a friendly diagnostic
 when it is not installed. Benchmark starts, completion, cancellation, errors
 and exports are written to the application log.
 
+## Results dashboard
+
+When a benchmark completes, DiskBench opens a results dashboard containing
+hardware identity, interface, date, duration, each workload's throughput,
+latency and IOPS, plus a reproducible 0–100 DiskBench Score. The scoring
+weights sequential throughput, random throughput, IOPS and latency; SMART
+health is deliberately reserved for a future scoring revision.
+
+`H` opens history. History can be filtered by disk, date, model and device.
+`ENTER` opens a stored result, `C` compares it with the previous run, and the
+comparison shows improved, declined or unchanged metrics with absolute and
+percentage differences. Compact Unicode charts visualize throughput and score
+trends. `E` exports CSV, JSON, Markdown, HTML and PDF reports.
+
+`S` opens persistent settings for benchmark file size, iterations, runtime,
+output directory, history retention and theme. Settings are stored as JSON in
+`~/.config/diskbench/settings.json` and loaded on the next start.
+
 ## Keyboard shortcuts
 
 | Key | Action |
@@ -73,6 +94,9 @@ and exports are written to the application log.
 | Ctrl+D | Clear selection |
 | B | Run fio benchmark for selected/current device |
 | H | Open benchmark history |
+| S | Open settings |
+| E | Export results or history |
+| C | Compare selected history run |
 | R | Refresh inventory and hardware inspection |
 | Q | Quit |
 | Escape | Cancel benchmark, or go back/close the active dialog |
@@ -84,6 +108,7 @@ and exports are written to the application log.
 - `v0.3`: SMART health, temperatures, NVMe metadata, storage classification, and grouped hardware details.
 - `v0.4`: complete hardware inspection data flow, filesystem fallbacks, interface and partition-table metadata, and testable SMART/NVMe services.
 - `v0.5`: safe fio benchmarks, historical results, comparison views, and report export.
+- `v0.6`: results dashboard, score calculation, filters, trend charts, PDF reports, and persistent settings.
 - `v1.0`: stable plugin boundaries, packaging, complete test coverage, and release documentation.
 
 ## License

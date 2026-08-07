@@ -2,6 +2,19 @@
 
 All notable changes to DiskBench are documented here.
 
+## [0.6.0] - 2026-08-07
+
+### Added
+
+- Results dashboard with hardware, interface, date, duration and workload metrics.
+- Isolated 0–100 DiskBench Score based on throughput, random performance, IOPS and latency.
+- History filters for disk, date, model and device.
+- Detailed stored-result view, comparison statuses, absolute/percentage deltas and trend charts.
+- PDF reports generated with ReportLab, alongside CSV, JSON, Markdown and HTML exports.
+- Persistent JSON settings for benchmark size, iterations, output path, retention and theme.
+- History retention enforcement and backward-compatible SQLite schema migration.
+- Integration tests covering score, comparison, settings, PDF generation and the dashboard flow.
+
 ## [0.5.0] - 2026-08-07
 
 ### Added

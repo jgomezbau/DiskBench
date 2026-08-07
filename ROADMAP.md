@@ -12,7 +12,15 @@ direction, not a promise of dates.
 - Export history as JSON, CSV, Markdown and HTML.
 - Compare a run with the previous run for the same device.
 
-## v0.6 — Benchmark Reliability
+## v0.6 — Results Dashboard
+
+- Present benchmark results with hardware context and a reproducible score.
+- Filter history and inspect benchmark evolution with terminal charts.
+- Compare metrics with absolute and percentage differences.
+- Export portable CSV, JSON, Markdown, HTML and PDF reports.
+- Persist user benchmark and history settings as JSON.
+
+## v0.7 — Benchmark Reliability
 
 - Improve workload calibration and progress estimation.
 - Add stronger device identity matching across reconnects.

@@ -79,6 +79,29 @@ def test_benchmark_workloads_are_executed_in_declared_order(tmp_path: Path) -> N
     assert calls == ["--rw=read", "--rw=write", "--rw=randread", "--rw=randwrite"]
 
 
+def test_benchmark_iterations_are_aggregated_per_workload(tmp_path: Path) -> None:
+    calls = 0
+
+    def runner(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+        nonlocal calls
+        calls += 1
+        return _fio_process(command, **kwargs)
+
+    config = AppConfig(
+        fio_binary=sys.executable,
+        benchmark_file_size_bytes=4096,
+        benchmark_minimum_free_space_bytes=1,
+        benchmark_iterations=2,
+    )
+    disk = Disk(name="sda", model="Test SSD", mount_point=str(tmp_path))
+
+    results = FioBenchmarkService(config, runner=runner).benchmark_disk(disk)
+
+    assert calls == 8
+    assert len(results.results) == 4
+    assert all(result.success for result in results.results)
+
+
 def test_invalid_fio_json_returns_a_failed_result(tmp_path: Path) -> None:
     def invalid_runner(command: list[str], **_: object) -> subprocess.CompletedProcess[str]:
         return subprocess.CompletedProcess(command, 0, "[]", "")

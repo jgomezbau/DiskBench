@@ -4,10 +4,10 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "diskbench"
-version = "0.1.0a0"
+version = "0.6.0"
 description = "Linux storage analysis and benchmarking TUI"
 requires-python = ">=3.12"
-dependencies = ["psutil>=5.9,<8.0", "rich>=13.7,<16.0", "textual>=0.50,<1.0"]
+dependencies = ["psutil>=5.9,<8.0", "reportlab>=4.0,<5.0", "rich>=13.7,<16.0", "textual>=0.50,<1.0"]
 
 [tool.black]
 line-length = 100

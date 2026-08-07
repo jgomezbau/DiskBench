@@ -20,15 +20,21 @@ class DiskBenchApp(App[None]):
     BINDINGS = [("q", "quit", "Quit"), ("r", "refresh", "Refresh")]
 
     def __init__(self, config: AppConfig | None = None) -> None:
-        self.config = config or AppConfig()
+        self.config = config or AppConfig.load()
         configure_logging(self.config.log_directory)
         super().__init__()
+        if self.config.theme == "light":
+            self.add_class("theme-light")
 
     def on_mount(self) -> None:
         """Push the dashboard once the app has a running event loop."""
         detector = LsblkDetectionService(self.config)
         benchmark_service = FioBenchmarkService(self.config)
-        history_store = HistoryStore(self.config.history_directory)
+        history_store = HistoryStore(
+            self.config.history_directory,
+            self.config.history_retention,
+            self.config.output_directory,
+        )
         self.push_screen(
             HomeScreen(
                 detector,
@@ -36,5 +42,6 @@ class DiskBenchApp(App[None]):
                 NvmeService(self.config),
                 benchmark_service,
                 history_store,
+                self.config,
             )
         )

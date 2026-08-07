@@ -2,7 +2,6 @@
 
 import logging
 from functools import partial
-from pathlib import Path
 
 from textual.app import ComposeResult
 from textual.containers import Container
@@ -10,6 +9,7 @@ from textual.events import Key
 from textual.screen import Screen
 from textual.widgets import Label
 
+from app.config import AppConfig
 from app.models.disk import Disk
 from app.services.benchmark import FioBenchmarkService
 from app.services.detect import DetectionError, LsblkDetectionService
@@ -21,6 +21,7 @@ from app.ui.dialogs import DiskDetailsDialog
 from app.ui.footer import FooterBar
 from app.ui.header import HeaderBar
 from app.ui.history import HistoryScreen
+from app.ui.settings import SettingsDialog
 from app.ui.widgets import EmptyState, StorageTable
 
 LOGGER = logging.getLogger(__name__)
@@ -36,13 +37,19 @@ class HomeScreen(Screen[None]):
         nvme_service: NvmeService | None = None,
         benchmark_service: FioBenchmarkService | None = None,
         history_store: HistoryStore | None = None,
+        config: AppConfig | None = None,
     ) -> None:
         super().__init__()
         self.detector = detector
+        self.config = config or AppConfig()
         self.smart_service = smart_service or SmartService()
         self.nvme_service = nvme_service or NvmeService()
         self.benchmark_service = benchmark_service or FioBenchmarkService()
-        self.history_store = history_store or HistoryStore(Path("history"))
+        self.history_store = history_store or HistoryStore(
+            self.config.history_directory,
+            self.config.history_retention,
+            self.config.output_directory,
+        )
 
     def on_mount(self) -> None:
         """Start slow hardware queries after the first table render."""
@@ -191,4 +198,7 @@ class HomeScreen(Screen[None]):
             event.stop()
         elif key == "h":
             self.app.push_screen(HistoryScreen(self.history_store))
+            event.stop()
+        elif key == "s":
+            self.app.push_screen(SettingsDialog(self.config))
             event.stop()

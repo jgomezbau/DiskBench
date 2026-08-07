@@ -57,13 +57,13 @@ class DiskBenchmarkResults:
     model: str
     serial: str
     capacity: str
+    interface: str = "--"
     completed_at: str = field(default_factory=lambda: datetime.now(UTC).isoformat())
+    duration_seconds: float = 0.0
+    score: float = 0.0
     results: list[BenchmarkResult] = field(default_factory=list)
 
     @property
     def overall_score(self) -> float:
-        """Calculate a transparent normalized score from successful workloads."""
-        successful = [result for result in self.results if result.success]
-        if not successful:
-            return 0.0
-        return sum(result.throughput_mib_per_second for result in successful) / len(successful)
+        """Return the score calculated by the scoring service."""
+        return self.score
