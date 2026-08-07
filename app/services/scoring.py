@@ -27,6 +27,17 @@ class MetricComparison:
     status: ComparisonStatus
 
 
+@dataclass(frozen=True, slots=True)
+class BenchmarkAnalysis:
+    """Human-readable summary derived from successful workload results."""
+
+    best_metric: str
+    worst_metric: str
+    average_throughput_mib: float
+    average_iops: float
+    recommendation: str
+
+
 class ScoreCalculator:
     """Calculate a reproducible 0–100 score from benchmark results."""
 
@@ -87,3 +98,32 @@ class ComparisonService:
         else:
             status = ComparisonStatus.DECLINED
         return MetricComparison(metric, previous, current, difference, percentage, status)
+
+
+class BenchmarkAnalysisService:
+    """Summarize measurements without coupling analysis to Textual."""
+
+    def analyze(self, results: list[BenchmarkResult]) -> BenchmarkAnalysis:
+        """Return best/worst workloads, averages and a practical recommendation."""
+        successful = [result for result in results if result.success]
+        if not successful:
+            return BenchmarkAnalysis("--", "--", 0.0, 0.0, "No successful measurements")
+        best = max(successful, key=lambda result: result.throughput_mib_per_second)
+        worst = min(successful, key=lambda result: result.throughput_mib_per_second)
+        average_throughput = sum(result.throughput_mib_per_second for result in successful) / len(
+            successful
+        )
+        average_iops = sum(result.iops for result in successful) / len(successful)
+        if best.throughput_mib_per_second >= 1000:
+            recommendation = "Excellent throughput; compare queue depth for saturation."
+        elif worst.latency_ms > 10:
+            recommendation = "High latency detected; inspect health and background load."
+        else:
+            recommendation = "Review the detailed workload results before tuning storage."
+        return BenchmarkAnalysis(
+            best_metric=best.workload_name or best.test.value,
+            worst_metric=worst.workload_name or worst.test.value,
+            average_throughput_mib=average_throughput,
+            average_iops=average_iops,
+            recommendation=recommendation,
+        )

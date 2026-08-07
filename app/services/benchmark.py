@@ -2,6 +2,7 @@
 
 import json
 import logging
+import os
 import shutil
 import subprocess
 import tempfile
@@ -13,12 +14,12 @@ from typing import Any
 
 from app.config import AppConfig
 from app.models.benchmark import (
-    BENCHMARK_SPECS,
     BenchmarkResult,
     BenchmarkSpec,
     DiskBenchmarkResults,
 )
 from app.models.disk import Disk
+from app.services.profiles import BenchmarkProfileService
 from app.services.scoring import ScoreCalculator
 
 LOGGER = logging.getLogger(__name__)
@@ -38,10 +39,12 @@ class FioBenchmarkService:
         config: AppConfig | None = None,
         runner: Runner = subprocess.run,
         scorer: ScoreCalculator | None = None,
+        profile_service: BenchmarkProfileService | None = None,
     ) -> None:
         self.config = config or AppConfig()
         self.runner = runner
         self.scorer = scorer or ScoreCalculator()
+        self.profile_service = profile_service or BenchmarkProfileService()
 
     def is_available(self) -> bool:
         """Return whether the configured fio executable is available."""
@@ -78,9 +81,10 @@ class FioBenchmarkService:
                 temporary_path = Path(temporary_file.name)
 
             iterations = max(1, self.config.benchmark_iterations)
-            total = len(BENCHMARK_SPECS) * iterations
+            specs = self.profile_service.workloads(self.config)
+            total = len(specs) * iterations
             completed = 0
-            for spec in BENCHMARK_SPECS:
+            for spec in specs:
                 samples: list[BenchmarkResult] = []
                 for iteration in range(1, iterations + 1):
                     if cancel_event is not None and cancel_event.is_set():
@@ -117,7 +121,11 @@ class FioBenchmarkService:
         """Average repeated measurements while preserving failures."""
         if not samples or not all(sample.success for sample in samples):
             errors = "; ".join(sample.error for sample in samples if sample.error)
-            return BenchmarkResult(test=spec.test, error=errors or "Benchmark failed")
+            return BenchmarkResult(
+                test=spec.test,
+                error=errors or "Benchmark failed",
+                workload_name=spec.label,
+            )
         count = len(samples)
         return BenchmarkResult(
             test=spec.test,
@@ -129,6 +137,7 @@ class FioBenchmarkService:
             latency_ms=sum(sample.latency_ms for sample in samples) / count,
             duration_seconds=sum(sample.duration_seconds for sample in samples),
             success=True,
+            workload_name=spec.label,
         )
 
     def _run_test(self, filename: Path, spec: BenchmarkSpec) -> BenchmarkResult:
@@ -139,15 +148,17 @@ class FioBenchmarkService:
             f"--rw={spec.read_write}",
             f"--bs={spec.block_size}",
             f"--size={self.config.benchmark_file_size_bytes}",
-            "--direct=1",
-            "--ioengine=libaio",
-            "--iodepth=16",
-            "--numjobs=1",
+            f"--direct={int(self.config.benchmark_direct_io)}",
+            f"--ioengine={'libaio' if self.config.benchmark_async_io else 'sync'}",
+            f"--iodepth={spec.queue_depth}",
+            f"--numjobs={spec.num_jobs}",
             "--group_reporting=1",
             "--output-format=json",
             f"--runtime={self.config.benchmark_runtime_seconds}",
             "--time_based=1",
         ]
+        if self.config.benchmark_verify:
+            command.extend(("--verify=crc32c", "--do_verify=1"))
         LOGGER.info("Running fio workload: %s", " ".join(command))
         try:
             completed = self.runner(
@@ -158,19 +169,21 @@ class FioBenchmarkService:
             )
         except OSError as exc:
             LOGGER.warning("fio unavailable: %s", exc)
-            return BenchmarkResult(test=spec.test, error=str(exc))
+            return BenchmarkResult(test=spec.test, error=str(exc), workload_name=spec.label)
 
         if completed.returncode != 0:
             error = completed.stderr.strip() or f"fio exited with {completed.returncode}"
             LOGGER.warning("fio workload failed: %s", error)
-            return BenchmarkResult(test=spec.test, error=error)
+            return BenchmarkResult(test=spec.test, error=error, workload_name=spec.label)
 
         try:
             payload = json.loads(completed.stdout or "{}")
             return self._parse_result(spec, payload)
         except (json.JSONDecodeError, TypeError, ValueError, KeyError, AttributeError) as exc:
             LOGGER.warning("Invalid fio JSON for %s: %s", spec.test, exc)
-            return BenchmarkResult(test=spec.test, error=f"Invalid fio output: {exc}")
+            return BenchmarkResult(
+                test=spec.test, error=f"Invalid fio output: {exc}", workload_name=spec.label
+            )
 
     @staticmethod
     def _parse_result(spec: BenchmarkSpec, payload: dict[str, Any]) -> BenchmarkResult:
@@ -193,14 +206,27 @@ class FioBenchmarkService:
             latency_ms=float(latency) / 1_000_000,
             duration_seconds=float(direction.get("runtime", 0)) / 1000,
             success=True,
+            workload_name=spec.label,
         )
 
     def _verify_space(self, mount_point: Path) -> None:
         usage = shutil.disk_usage(mount_point)
-        if usage.free < self.config.benchmark_minimum_free_space_bytes:
+        required = max(
+            self.config.benchmark_minimum_free_space_bytes,
+            self.config.benchmark_file_size_bytes,
+        )
+        if usage.free < required:
             raise BenchmarkError(
                 f"Insufficient free space on {mount_point}: {usage.free} bytes available"
             )
+        if not os.access(mount_point, os.W_OK):
+            raise BenchmarkError(f"Mount point is not writable: {mount_point}")
+        try:
+            file_size_bits = int(os.pathconf(mount_point, "PC_FILESIZEBITS"))
+        except (OSError, ValueError):
+            file_size_bits = 63
+        if self.config.benchmark_file_size_bytes.bit_length() > file_size_bits:
+            raise BenchmarkError(f"Benchmark file is too large for filesystem: {mount_point}")
 
     def _ensure_available(self) -> None:
         if not self.is_available():

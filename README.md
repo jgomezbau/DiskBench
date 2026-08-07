@@ -1,6 +1,6 @@
 # DiskBench
 
-DiskBench is a Linux-first terminal application for professional storage inspection and safe disk benchmarking. `v0.6` adds a results dashboard, scoring, trend history, comparison, reporting and persistent settings to the controlled `fio` benchmark engine.
+DiskBench is a Linux-first terminal application for professional storage inspection and safe disk benchmarking. `v0.7` adds configurable workload profiles, queue controls, live metrics, analysis and history metadata to the controlled `fio` benchmark engine.
 
 ## Installation
 
@@ -83,6 +83,12 @@ trends. `E` exports CSV, JSON, Markdown, HTML and PDF reports.
 output directory, history retention and theme. Settings are stored as JSON in
 `~/.config/diskbench/settings.json` and loaded on the next start.
 
+## v0.7 benchmark engine
+
+Quick, Standard, Extended and Custom profiles configure workload sequences. Custom additionally controls block size, queue depth and job count. Direct I/O, synchronous or asynchronous I/O, verification, runtime, iterations and file size are persisted in the settings file. The sequential queue runs in a background worker: `P` pauses safely, `T` retries, `X` skips and `Escape` cancels. The screen reports measured throughput, IOPS, latency, elapsed time, queue position and an ASCII chart.
+
+Before execution DiskBench verifies `fio`, the mounted filesystem, writability and free space at least as large as the benchmark file. Temporary files are removed in cleanup. History supports SQLite/JSON persistence, session names, notes, favorites and deletion.
+
 ## Keyboard shortcuts
 
 | Key | Action |
@@ -93,6 +99,9 @@ output directory, history retention and theme. Settings are stored as JSON in
 | Ctrl+A | Select all |
 | Ctrl+D | Clear selection |
 | B | Run fio benchmark for selected/current device |
+| P | Pause or resume the benchmark queue |
+| T | Retry the current disk |
+| X | Skip the current disk |
 | H | Open benchmark history |
 | S | Open settings |
 | E | Export results or history |
@@ -109,6 +118,7 @@ output directory, history retention and theme. Settings are stored as JSON in
 - `v0.4`: complete hardware inspection data flow, filesystem fallbacks, interface and partition-table metadata, and testable SMART/NVMe services.
 - `v0.5`: safe fio benchmarks, historical results, comparison views, and report export.
 - `v0.6`: results dashboard, score calculation, filters, trend charts, PDF reports, and persistent settings.
+- `v0.7`: professional profiles, configurable fio parameters, queue controls, live metrics, analysis, and history metadata.
 - `v1.0`: stable plugin boundaries, packaging, complete test coverage, and release documentation.
 
 ## License

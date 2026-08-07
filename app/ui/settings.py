@@ -39,6 +39,27 @@ class SettingsDialog(ModalScreen[None]):
                     "runtime",
                     str(self.config.benchmark_runtime_seconds),
                 ),
+                self._field(
+                    "Profile (Quick/Standard/Extended/Custom)",
+                    "profile",
+                    self.config.benchmark_profile,
+                ),
+                self._field("Block size", "block-size", self.config.benchmark_block_size),
+                self._field("Queue depth", "queue-depth", str(self.config.benchmark_queue_depth)),
+                self._field("Jobs", "jobs", str(self.config.benchmark_num_jobs)),
+                self._field(
+                    "Direct I/O (true/false)",
+                    "direct-io",
+                    str(self.config.benchmark_direct_io).lower(),
+                ),
+                self._field(
+                    "Async I/O (true/false)",
+                    "async-io",
+                    str(self.config.benchmark_async_io).lower(),
+                ),
+                self._field(
+                    "Verify data (true/false)", "verify", str(self.config.benchmark_verify).lower()
+                ),
                 self._field("Output directory", "output", str(self.config.output_directory)),
                 self._field("History directory", "history", str(self.config.history_directory)),
                 self._field("History retention", "retention", str(self.config.history_retention)),
@@ -73,6 +94,13 @@ class SettingsDialog(ModalScreen[None]):
             file_size = self._positive_int("file-size")
             iterations = self._positive_int("iterations")
             runtime = self._positive_int("runtime")
+            queue_depth = self._positive_int("queue-depth")
+            jobs = self._positive_int("jobs")
+            profile = self._profile()
+            block_size = self._non_empty("block-size")
+            direct_io = self._boolean("direct-io")
+            async_io = self._boolean("async-io")
+            verify = self._boolean("verify")
             retention = self._positive_int("retention")
             output = self._path("output")
             history = self._path("history")
@@ -86,6 +114,13 @@ class SettingsDialog(ModalScreen[None]):
             benchmark_file_size_bytes=file_size,
             benchmark_iterations=iterations,
             benchmark_runtime_seconds=runtime,
+            benchmark_profile=profile,
+            benchmark_block_size=block_size,
+            benchmark_queue_depth=queue_depth,
+            benchmark_num_jobs=jobs,
+            benchmark_direct_io=direct_io,
+            benchmark_async_io=async_io,
+            benchmark_verify=verify,
             output_directory=output,
             history_directory=history,
             history_retention=retention,
@@ -126,6 +161,26 @@ class SettingsDialog(ModalScreen[None]):
         if theme not in {"dark", "light"}:
             raise ValueError("theme must be dark or light")
         return theme
+
+    def _profile(self) -> str:
+        value = self._non_empty("profile").title()
+        if value not in {"Quick", "Standard", "Extended", "Custom"}:
+            raise ValueError("profile must be Quick, Standard, Extended or Custom")
+        return value
+
+    def _non_empty(self, field_id: str) -> str:
+        value = self.query_one(f"#settings-{field_id}", Input).value.strip()
+        if not value:
+            raise ValueError(f"{field_id} cannot be empty")
+        return value
+
+    def _boolean(self, field_id: str) -> bool:
+        value = self._non_empty(field_id).lower()
+        if value in {"true", "yes", "1", "on"}:
+            return True
+        if value in {"false", "no", "0", "off"}:
+            return False
+        raise ValueError(f"{field_id} must be true or false")
 
     def action_close(self) -> None:
         """Close without changing persisted settings."""

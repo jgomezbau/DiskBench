@@ -14,7 +14,7 @@ class AppConfig:
     """Settings shared by the composition root and services."""
 
     application_name: str = "DiskBench"
-    version: str = "v0.6"
+    version: str = "v0.7"
     lsblk_binary: str = "lsblk"
     blkid_binary: str = "blkid"
     smartctl_binary: str = "smartctl"
@@ -24,6 +24,13 @@ class AppConfig:
     benchmark_minimum_free_space_bytes: int = 1200 * 1024 * 1024
     benchmark_runtime_seconds: int = 5
     benchmark_iterations: int = 1
+    benchmark_profile: str = "Standard"
+    benchmark_block_size: str = "1M"
+    benchmark_queue_depth: int = 16
+    benchmark_num_jobs: int = 1
+    benchmark_direct_io: bool = True
+    benchmark_async_io: bool = True
+    benchmark_verify: bool = False
     history_directory: Path = Path("history")
     output_directory: Path = Path("history")
     history_retention: int = 100
@@ -63,6 +70,13 @@ class AppConfig:
             "benchmark_file_size_bytes": self.benchmark_file_size_bytes,
             "benchmark_runtime_seconds": self.benchmark_runtime_seconds,
             "benchmark_iterations": self.benchmark_iterations,
+            "benchmark_profile": self.benchmark_profile,
+            "benchmark_block_size": self.benchmark_block_size,
+            "benchmark_queue_depth": self.benchmark_queue_depth,
+            "benchmark_num_jobs": self.benchmark_num_jobs,
+            "benchmark_direct_io": self.benchmark_direct_io,
+            "benchmark_async_io": self.benchmark_async_io,
+            "benchmark_verify": self.benchmark_verify,
             "output_directory": str(self.output_directory),
             "history_directory": str(self.history_directory),
             "history_retention": self.history_retention,
@@ -78,10 +92,20 @@ class AppConfig:
             "benchmark_file_size_bytes",
             "benchmark_runtime_seconds",
             "benchmark_iterations",
+            "benchmark_queue_depth",
+            "benchmark_num_jobs",
             "history_retention",
         ):
             value = payload.get(field_name)
             if isinstance(value, int) and value > 0:
+                values[field_name] = value
+        for field_name in ("benchmark_profile", "benchmark_block_size"):
+            value = payload.get(field_name)
+            if isinstance(value, str) and value.strip():
+                values[field_name] = value.strip()
+        for field_name in ("benchmark_direct_io", "benchmark_async_io", "benchmark_verify"):
+            value = payload.get(field_name)
+            if isinstance(value, bool):
                 values[field_name] = value
         for field_name in ("history_directory", "output_directory"):
             value = payload.get(field_name)

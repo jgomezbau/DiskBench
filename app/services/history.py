@@ -51,7 +51,8 @@ class HistoryStore:
             connection.execute(
                 "INSERT INTO benchmark_runs "
                 "(completed_at, disk, model, serial, capacity, results_json, overall_score, "
-                "interface, duration_seconds, snapshot_path) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "interface, duration_seconds, snapshot_path, session_name, notes, favorite) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     results.completed_at,
                     results.disk_name,
@@ -63,6 +64,9 @@ class HistoryStore:
                     results.interface,
                     results.duration_seconds,
                     str(json_path),
+                    results.session_name,
+                    results.notes,
+                    int(results.favorite),
                 ),
             )
         self._enforce_retention()
@@ -91,7 +95,8 @@ class HistoryStore:
             connection.row_factory = sqlite3.Row
             rows = connection.execute(
                 "SELECT id, completed_at, disk, model, serial, capacity, results_json, "
-                "overall_score, interface, duration_seconds, snapshot_path "
+                "overall_score, interface, duration_seconds, snapshot_path, "
+                "session_name, notes, favorite "
                 f"FROM benchmark_runs{where} ORDER BY completed_at DESC",
                 parameters,
             ).fetchall()
@@ -106,7 +111,8 @@ class HistoryStore:
             connection.row_factory = sqlite3.Row
             row = connection.execute(
                 "SELECT id, completed_at, disk, model, serial, capacity, results_json, "
-                "overall_score, interface, duration_seconds, snapshot_path "
+                "overall_score, interface, duration_seconds, snapshot_path, "
+                "session_name, notes, favorite "
                 "FROM benchmark_runs WHERE id = ?",
                 (run_id,),
             ).fetchone()
@@ -128,6 +134,7 @@ class HistoryStore:
                 duration_seconds=float(item.get("duration_seconds", 0)),
                 success=bool(item.get("success", False)),
                 error=str(item.get("error", "")),
+                workload_name=str(item.get("workload_name", "")),
             )
             for item in raw_results
             if isinstance(item, dict)
@@ -144,8 +151,33 @@ class HistoryStore:
             completed_at=str(record.get("completed_at", "--")),
             duration_seconds=HistoryStore._as_float(record.get("duration_seconds", 0)),
             score=score,
+            session_name=str(record.get("session_name", "")),
+            notes=str(record.get("notes", "")),
+            favorite=bool(record.get("favorite", False)),
             results=results,
         )
+
+    def delete_run(self, run_id: int) -> bool:
+        """Delete a run and its JSON snapshot."""
+        record = self.get_run(run_id)
+        if record is None:
+            return False
+        snapshot = str(record.get("snapshot_path", ""))
+        with sqlite3.connect(self.database_path) as connection:
+            connection.execute("DELETE FROM benchmark_runs WHERE id = ?", (run_id,))
+        if snapshot:
+            Path(snapshot).unlink(missing_ok=True)
+        return True
+
+    def update_metadata(self, run_id: int, name: str, notes: str, favorite: bool) -> bool:
+        """Update user-owned history metadata."""
+        with sqlite3.connect(self.database_path) as connection:
+            cursor = connection.execute(
+                "UPDATE benchmark_runs SET session_name = ?, notes = ?, favorite = ? "
+                "WHERE id = ?",
+                (name.strip(), notes.strip(), int(favorite), run_id),
+            )
+        return cursor.rowcount > 0
 
     @staticmethod
     def _as_float(value: object) -> float:
@@ -182,6 +214,9 @@ class HistoryStore:
                 ("interface", "TEXT NOT NULL DEFAULT '--'"),
                 ("duration_seconds", "REAL NOT NULL DEFAULT 0"),
                 ("snapshot_path", "TEXT NOT NULL DEFAULT ''"),
+                ("session_name", "TEXT NOT NULL DEFAULT ''"),
+                ("notes", "TEXT NOT NULL DEFAULT ''"),
+                ("favorite", "INTEGER NOT NULL DEFAULT 0"),
             ):
                 if definition[0] not in columns:
                     connection.execute(
@@ -221,5 +256,8 @@ class HistoryStore:
             "interface": results.interface,
             "duration_seconds": results.duration_seconds,
             "overall_score": results.overall_score,
+            "session_name": results.session_name,
+            "notes": results.notes,
+            "favorite": results.favorite,
             "results": [asdict(result) for result in results.results],
         }

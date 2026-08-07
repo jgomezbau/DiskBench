@@ -24,6 +24,9 @@ class HistoryScreen(Screen[None]):
         ("e", "export", "Export"),
         ("c", "compare", "Compare"),
         ("enter", "details", "Details"),
+        ("n", "rename", "Rename"),
+        ("f", "favorite", "Favorite"),
+        ("d", "delete", "Delete"),
     ]
 
     def __init__(self, store: HistoryStore) -> None:
@@ -48,6 +51,12 @@ class HistoryScreen(Screen[None]):
                 id="history-filters",
             ),
             DataTable(id="history-table"),
+            Horizontal(
+                Input(placeholder="Session name", id="session-name"),
+                Input(placeholder="Notes", id="session-notes"),
+                Button("Save metadata", id="save-metadata"),
+                id="history-metadata",
+            ),
             Label(self._trend_chart(), id="history-chart"),
             Label("", id="history-message"),
             id="history-content",
@@ -61,7 +70,7 @@ class HistoryScreen(Screen[None]):
         self.records = records
         table = self.query_one("#history-table", DataTable)
         table.clear(columns=True)
-        table.add_columns("DATE", "DISK", "MODEL", "SERIAL", "CAPACITY", "SCORE")
+        table.add_columns("DATE", "DISK", "MODEL", "SERIAL", "CAPACITY", "SCORE", "FAV")
         for record in records:
             table.add_row(
                 str(record.get("completed_at", "--")),
@@ -70,12 +79,15 @@ class HistoryScreen(Screen[None]):
                 str(record.get("serial", "--")),
                 str(record.get("capacity", "--")),
                 f"{self._score(record.get('overall_score', 0)):.2f}",
+                "★" if record.get("favorite") else "",
             )
         self.query_one("#history-chart", Label).update(self._trend_chart())
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
         if event.button.id == "apply-filters":
             self._apply_filters()
+        elif event.button.id == "save-metadata":
+            self.action_save_metadata()
 
     def _apply_filters(self) -> None:
         values = {
@@ -133,6 +145,61 @@ class HistoryScreen(Screen[None]):
         result = self.store.to_results(self.records[table.cursor_row])
         if result.results:
             self.app.push_screen(BenchmarkDetailScreen(result, result.results[0]))
+
+    def _selected_record(self) -> dict[str, object] | None:
+        if not self.records:
+            return None
+        row = self.query_one("#history-table", DataTable).cursor_row
+        return self.records[row] if 0 <= row < len(self.records) else None
+
+    def action_rename(self) -> None:
+        """Focus the session name editor for the selected run."""
+        record = self._selected_record()
+        if record is not None:
+            self.query_one("#session-name", Input).value = str(record.get("session_name", ""))
+            self.query_one("#session-name", Input).focus()
+
+    def action_save_metadata(self) -> None:
+        """Persist the selected run's name and notes."""
+        record = self._selected_record()
+        record_id = self._record_id(record)
+        if record is None or record_id is None:
+            return
+        name = self.query_one("#session-name", Input).value
+        notes = self.query_one("#session-notes", Input).value
+        self.store.update_metadata(record_id, name, notes, bool(record.get("favorite")))
+        self._render_records(self.store.list_runs())
+        self.query_one("#history-message", Label).update("Session metadata saved")
+
+    def action_favorite(self) -> None:
+        """Toggle the selected run's favorite marker."""
+        record = self._selected_record()
+        record_id = self._record_id(record)
+        if record is None or record_id is None:
+            return
+        self.store.update_metadata(
+            record_id,
+            str(record.get("session_name", "")),
+            str(record.get("notes", "")),
+            not bool(record.get("favorite")),
+        )
+        self._render_records(self.store.list_runs())
+
+    def action_delete(self) -> None:
+        """Delete the selected history run."""
+        record = self._selected_record()
+        record_id = self._record_id(record)
+        if record is None or record_id is None:
+            return
+        self.store.delete_run(record_id)
+        self._render_records(self.store.list_runs())
+
+    @staticmethod
+    def _record_id(record: dict[str, object] | None) -> int | None:
+        if record is None:
+            return None
+        value = record.get("id")
+        return value if isinstance(value, int) else None
 
     def _trend_chart(self) -> str:
         if not self.records:

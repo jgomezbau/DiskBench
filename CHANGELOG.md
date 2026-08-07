@@ -2,6 +2,18 @@
 
 All notable changes to DiskBench are documented here.
 
+## [0.7.0] - 2026-08-07
+
+### Added
+
+- Quick, Standard, Extended and Custom benchmark profiles.
+- Configurable fio parameters, queue controls, live metrics and workload analysis.
+- History session names, notes, favorites and deletion.
+
+### Safety
+
+- Free-space validation now covers the configured benchmark file size.
+
 ## [0.6.0] - 2026-08-07
 
 ### Added

@@ -19,6 +19,7 @@ from app.services.benchmark import BenchmarkError, FioBenchmarkService
 from app.services.export import HistoryExporter
 from app.services.history import HistoryStore
 from app.services.report import ReportGenerator
+from app.services.scoring import BenchmarkAnalysisService
 from app.ui.footer import FooterBar
 from app.ui.header import HeaderBar
 from app.ui.results import BenchmarkDetailScreen
@@ -30,7 +31,12 @@ LOGGER = logging.getLogger(__name__)
 class BenchmarkScreen(Screen[None]):
     """Run selected disks sequentially in a background worker."""
 
-    BINDINGS = [("escape", "cancel", "Cancel")]
+    BINDINGS = [
+        ("escape", "cancel", "Cancel"),
+        ("p", "pause_resume", "Pause/Resume"),
+        ("x", "skip", "Skip"),
+        ("t", "retry", "Retry"),
+    ]
 
     def __init__(
         self,
@@ -43,6 +49,10 @@ class BenchmarkScreen(Screen[None]):
         self.benchmark_service = benchmark_service
         self.history_store = history_store
         self.cancel_event = Event()
+        self.pause_event = Event()
+        self.pause_event.set()
+        self.skip_event = Event()
+        self.retry_event = Event()
         self.completed_results: list[DiskBenchmarkResults] = []
         self.started_at = 0.0
         self.queue_started = False
@@ -56,7 +66,15 @@ class BenchmarkScreen(Screen[None]):
             Label("Remaining disks: --", id="benchmark-remaining"),
             ProgressBar(total=100, show_eta=False, id="benchmark-progress"),
             Label("Elapsed: --   Estimated remaining: --", id="benchmark-timing"),
-            Button("Cancel benchmark [ESC]", id="cancel-benchmark"),
+            Label("Current metrics: --", id="benchmark-metrics"),
+            Label("Live chart: --", id="benchmark-chart"),
+            Container(
+                Button("Pause [P]", id="pause-benchmark"),
+                Button("Skip [X]", id="skip-benchmark"),
+                Button("Retry [T]", id="retry-benchmark"),
+                Button("Cancel benchmark [ESC]", id="cancel-benchmark"),
+                id="benchmark-actions",
+            ),
             id="benchmark-content",
         )
         yield FooterBar()
@@ -78,9 +96,16 @@ class BenchmarkScreen(Screen[None]):
 
     def _run_queue(self) -> None:
         total = len(self.disks)
-        for disk_index, disk in enumerate(self.disks):
+        disk_index = 0
+        while disk_index < total:
+            self.pause_event.wait()
             if self.cancel_event.is_set():
                 break
+            disk = self.disks[disk_index]
+            if self.skip_event.is_set():
+                self.skip_event.clear()
+                disk_index += 1
+                continue
             try:
                 results = self.benchmark_service.benchmark_disk(
                     disk,
@@ -94,12 +119,21 @@ class BenchmarkScreen(Screen[None]):
                 LOGGER.exception("Unexpected benchmark failure for %s", disk.name)
                 results = self._failed_results(disk, f"Unexpected failure: {exc}")
 
+            if self.retry_event.is_set() and not self.cancel_event.is_set():
+                self.retry_event.clear()
+                continue
+            if self.skip_event.is_set():
+                self.skip_event.clear()
+                disk_index += 1
+                continue
+
             self.completed_results.append(results)
             try:
                 self.history_store.save(results)
             except (OSError, ValueError, sqlite3.Error) as exc:
                 LOGGER.exception("Unable to save benchmark history for %s", disk.name)
                 self.app.call_from_thread(self._show_message, f"History save failed: {exc}")
+            disk_index += 1
 
         self.app.call_from_thread(self._finish, self.cancel_event.is_set())
 
@@ -151,10 +185,17 @@ class BenchmarkScreen(Screen[None]):
         self.query_one("#benchmark-timing", Label).update(
             f"Elapsed: {elapsed:.0f}s   Estimated remaining: {estimate}"
         )
+        metrics = "Current metrics: --"
+        if result is not None and result.success:
+            metrics = f"Latency: {result.latency_ms:.2f} ms · IOPS: {result.iops:.0f}"
+        self.query_one("#benchmark-metrics", Label).update(metrics)
         if result is not None:
             throughput = f"{result.throughput_mib_per_second:.1f} MiB/s"
             self.query_one("#benchmark-current", Label).update(
                 f"{disk_name} · {operation} · {throughput} · {result.iops:.0f} IOPS"
+            )
+            self.query_one("#benchmark-chart", Label).update(
+                result_charts([(operation, result.throughput_mib_per_second, 3500, "MiB/s")])
             )
 
     def _finish(self, cancelled: bool) -> None:
@@ -183,6 +224,12 @@ class BenchmarkScreen(Screen[None]):
     def on_button_pressed(self, event: Button.Pressed) -> None:
         if event.button.id == "cancel-benchmark":
             self.action_cancel()
+        elif event.button.id == "pause-benchmark":
+            self.action_pause_resume()
+        elif event.button.id == "skip-benchmark":
+            self.action_skip()
+        elif event.button.id == "retry-benchmark":
+            self.action_retry()
 
     def action_cancel(self) -> None:
         """Request cancellation without interrupting a running fio process."""
@@ -191,6 +238,24 @@ class BenchmarkScreen(Screen[None]):
             return
         LOGGER.info("Benchmark cancellation requested")
         self.cancel_event.set()
+        self.pause_event.set()
+
+    def action_pause_resume(self) -> None:
+        """Pause or resume at the next safe workload boundary."""
+        if self.pause_event.is_set():
+            self.pause_event.clear()
+            self.query_one("#pause-benchmark", Button).label = "Resume [P]"
+        else:
+            self.pause_event.set()
+            self.query_one("#pause-benchmark", Button).label = "Pause [P]"
+
+    def action_skip(self) -> None:
+        """Skip the current disk at the next safe queue boundary."""
+        self.skip_event.set()
+
+    def action_retry(self) -> None:
+        """Retry the current disk after the active operation completes."""
+        self.retry_event.set()
 
 
 class BenchmarkResultsScreen(Screen[None]):
@@ -219,6 +284,7 @@ class BenchmarkResultsScreen(Screen[None]):
             Label("BENCHMARK RESULTS", classes="section-title"),
             Label("E exports CSV, JSON, Markdown, HTML and PDF", classes="section-caption"),
             DataTable(id="results-table"),
+            Label("", id="results-summary"),
             Label(self._charts(), id="results-charts"),
             Label("", id="export-message"),
             id="results-content",
@@ -258,6 +324,15 @@ class BenchmarkResultsScreen(Screen[None]):
                     f"{item.duration_seconds:.1f} s" if item.success else "--",
                     f"{result.overall_score:.1f}",
                 )
+        if self.results:
+            analysis = BenchmarkAnalysisService().analyze(
+                [item for result in self.results for item in result.results]
+            )
+            self.query_one("#results-summary", Label).update(
+                f"Best: {analysis.best_metric} · Worst: {analysis.worst_metric} · "
+                f"Average: {analysis.average_throughput_mib:.1f} MiB/s · "
+                f"{analysis.average_iops:.0f} IOPS\nRecommendation: {analysis.recommendation}"
+            )
 
     def _charts(self) -> str:
         if not self.results:

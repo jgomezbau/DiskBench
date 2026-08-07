@@ -20,14 +20,19 @@ direction, not a promise of dates.
 - Export portable CSV, JSON, Markdown, HTML and PDF reports.
 - Persist user benchmark and history settings as JSON.
 
-## v0.7 — Benchmark Reliability
+## v0.7 — Professional Benchmark Engine
+
+- Add benchmark profiles and configurable fio parameters.
+- Add measured live metrics, charts, queue controls and history metadata.
+
+## v0.8 — Benchmark Reliability
 
 - Improve workload calibration and progress estimation.
 - Add stronger device identity matching across reconnects.
-- Add cancellation and interrupted-run recovery tests.
+- Add interrupted-run recovery tests.
 - Expand platform and filesystem compatibility documentation.
 
-## v0.8 — Hardware and UX quality
+## v0.9 — Hardware and UX quality
 
 - Resolve BUG-0001, BUG-0002 and BUG-0003.
 - Add richer SMART attribute presentation and vendor-specific diagnostics.

@@ -14,6 +14,15 @@ class BenchmarkTest(StrEnum):
     RANDOM_WRITE_4K = "Random Write 4K"
 
 
+class BenchmarkProfile(StrEnum):
+    """Available workload collections."""
+
+    QUICK = "Quick"
+    STANDARD = "Standard"
+    EXTENDED = "Extended"
+    CUSTOM = "Custom"
+
+
 @dataclass(frozen=True, slots=True)
 class BenchmarkSpec:
     """fio parameters for one workload."""
@@ -21,6 +30,9 @@ class BenchmarkSpec:
     test: BenchmarkTest
     read_write: str
     block_size: str
+    queue_depth: int = 16
+    num_jobs: int = 1
+    label: str = ""
 
 
 BENCHMARK_SPECS: tuple[BenchmarkSpec, ...] = (
@@ -42,6 +54,7 @@ class BenchmarkResult:
     duration_seconds: float = 0.0
     success: bool = False
     error: str = ""
+    workload_name: str = ""
 
     @property
     def throughput_mib_per_second(self) -> float:
@@ -61,6 +74,9 @@ class DiskBenchmarkResults:
     completed_at: str = field(default_factory=lambda: datetime.now(UTC).isoformat())
     duration_seconds: float = 0.0
     score: float = 0.0
+    session_name: str = ""
+    notes: str = ""
+    favorite: bool = False
     results: list[BenchmarkResult] = field(default_factory=list)
 
     @property
