@@ -152,10 +152,23 @@ class MountResolver:
                     Path(partition.mount_point), partition.filesystem, partition=partition.name
                 ),
             )
-        self._add_candidate(
-            candidates,
-            MountCandidate(Path(disk.mount_point), disk.filesystem, partition=disk.name),
-        )
+        partition_mountpoints = {
+            partition.mount_point
+            for partition in disk.partitions
+            if partition.mount_point not in self._placeholders
+        }
+        if disk.mount_point not in partition_mountpoints:
+            self._add_candidate(
+                candidates,
+                MountCandidate(Path(disk.mount_point), disk.filesystem, partition=disk.name),
+            )
+        else:
+            LOGGER.debug(
+                "Ignoring parent mount candidate: device=/dev/%s mountpoint=%s "
+                "reason=partition owns mountpoint",
+                disk.name,
+                disk.mount_point,
+            )
         known_mounts = {
             partition.name: partition.mount_point
             for partition in disk.partitions

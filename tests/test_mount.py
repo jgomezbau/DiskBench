@@ -76,3 +76,27 @@ def test_resolver_uses_findmnt_when_lsblk_has_no_mountpoint(tmp_path: Path) -> N
         )
 
     assert MountResolver(runner=runner).resolve(disk) == tmp_path
+
+
+def test_resolver_prefers_sdb3_when_parent_repeats_partition_mountpoint() -> None:
+    """The selected partition remains the fio target when lsblk duplicates its mount."""
+    mountpoint = Path("/run/media/juanbau/C8441BD4441BC3").resolve()
+    disk = Disk(
+        name="sdb",
+        filesystem="vfat",
+        mount_point=str(mountpoint),
+        partitions=[
+            Partition(
+                "sdb3",
+                filesystem="ntfs",
+                mount_point=str(mountpoint),
+                uuid="C8441BD4441BC3",
+            )
+        ],
+    )
+
+    candidates = MountResolver()._candidates(disk, [])
+
+    assert [(candidate.partition, candidate.filesystem) for candidate in candidates] == [
+        ("sdb3", "ntfs")
+    ]
