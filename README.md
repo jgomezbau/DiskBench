@@ -52,6 +52,11 @@ sequential read, sequential write, random read 4K and random write 4K. Tests
 use a temporary file on a mounted filesystem, verify free space first, and
 remove the file in a cleanup block. Disk devices are never opened directly.
 
+`MountResolver` selects a writable directory on the selected disk, preferring
+`/home`, `/`, `/run/media`, `/media` and `/mnt`. It rejects boot, optical,
+squashfs, swap, tmpfs and read-only filesystems; raw block-device paths are
+never passed to `fio`.
+
 Benchmark work runs in a Textual background worker. The progress screen shows
 the active disk, test, throughput, IOPS, elapsed time and estimated remaining
 time. Results are saved as JSON and in SQLite under `history/`; `E` exports

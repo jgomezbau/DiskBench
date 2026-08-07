@@ -19,6 +19,7 @@ from app.models.benchmark import (
     DiskBenchmarkResults,
 )
 from app.models.disk import Disk
+from app.services.mount import MountResolutionError, MountResolver
 from app.services.profiles import BenchmarkProfileService
 from app.services.scoring import ScoreCalculator
 
@@ -40,11 +41,13 @@ class FioBenchmarkService:
         runner: Runner = subprocess.run,
         scorer: ScoreCalculator | None = None,
         profile_service: BenchmarkProfileService | None = None,
+        mount_resolver: MountResolver | None = None,
     ) -> None:
         self.config = config or AppConfig()
         self.runner = runner
         self.scorer = scorer or ScoreCalculator()
         self.profile_service = profile_service or BenchmarkProfileService()
+        self.mount_resolver = mount_resolver or MountResolver()
 
     def is_available(self) -> bool:
         """Return whether the configured fio executable is available."""
@@ -57,7 +60,10 @@ class FioBenchmarkService:
         cancel_event: Event | None = None,
     ) -> DiskBenchmarkResults:
         """Run all supported tests sequentially for one mounted disk."""
-        mount_point = self._mount_point(disk)
+        try:
+            mount_point = self.mount_resolver.resolve(disk)
+        except MountResolutionError as exc:
+            raise BenchmarkError(str(exc)) from exc
         self._verify_space(mount_point)
         self._ensure_available()
         LOGGER.info("Benchmark started for %s", disk.name)
@@ -84,6 +90,24 @@ class FioBenchmarkService:
                 raise BenchmarkError(
                     f"Unable to create benchmark file on filesystem {mount_point}: {exc}"
                 ) from exc
+
+            filesystem, available = self.mount_resolver.describe(mount_point)
+            LOGGER.info(
+                "Benchmark context: directory=%s filesystem=%s available_bytes=%d "
+                "temporary_file=%s",
+                mount_point,
+                filesystem,
+                available,
+                temporary_path,
+            )
+            if progress is not None:
+                progress(
+                    f"Directory {mount_point} · Filesystem {filesystem} · "
+                    f"Available {available} bytes · File {temporary_path}",
+                    0,
+                    1,
+                    None,
+                )
 
             iterations = max(1, self.config.benchmark_iterations)
             specs = self.profile_service.workloads(self.config)
@@ -282,12 +306,3 @@ class FioBenchmarkService:
     def _ensure_available(self) -> None:
         if not self.is_available():
             raise BenchmarkError(f"fio is not installed or unavailable: {self.config.fio_binary}")
-
-    @staticmethod
-    def _mount_point(disk: Disk) -> Path:
-        if disk.mount_point in {"", "Unknown", "Not mounted", "--"}:
-            raise BenchmarkError(f"{disk.name} has no mounted filesystem")
-        path = Path(disk.mount_point)
-        if not path.is_dir():
-            raise BenchmarkError(f"Mount point does not exist: {path}")
-        return path

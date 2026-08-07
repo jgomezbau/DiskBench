@@ -181,7 +181,7 @@ def test_benchmark_queue_updates_results_screen_and_history(tmp_path: Path) -> N
 def test_benchmark_requires_a_mounted_filesystem() -> None:
     disk = Disk(name="sda", model="Test SSD")
 
-    with pytest.raises(BenchmarkError, match="no mounted filesystem"):
+    with pytest.raises(BenchmarkError, match="This device is not mounted"):
         FioBenchmarkService().benchmark_disk(disk)
 
 
