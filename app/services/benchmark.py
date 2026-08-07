@@ -72,13 +72,18 @@ class FioBenchmarkService:
         temporary_path: Path | None = None
         started_at = time.monotonic()
         try:
-            with tempfile.NamedTemporaryFile(
-                prefix=".diskbench-",
-                suffix=".fio",
-                dir=mount_point,
-                delete=False,
-            ) as temporary_file:
-                temporary_path = Path(temporary_file.name)
+            try:
+                with tempfile.NamedTemporaryFile(
+                    prefix=".diskbench-",
+                    suffix=".fio",
+                    dir=mount_point,
+                    delete=False,
+                ) as temporary_file:
+                    temporary_path = Path(temporary_file.name)
+            except OSError as exc:
+                raise BenchmarkError(
+                    f"Unable to create benchmark file on filesystem {mount_point}: {exc}"
+                ) from exc
 
             iterations = max(1, self.config.benchmark_iterations)
             specs = self.profile_service.workloads(self.config)
@@ -159,31 +164,77 @@ class FioBenchmarkService:
         ]
         if self.config.benchmark_verify:
             command.extend(("--verify=crc32c", "--do_verify=1"))
-        LOGGER.info("Running fio workload: %s", " ".join(command))
+        LOGGER.info(
+            "Running fio workload: filesystem=%s benchmark_file=%s command=%s",
+            filename.parent,
+            filename,
+            " ".join(command),
+        )
         try:
-            completed = self.runner(
-                command,
-                capture_output=True,
-                text=True,
-                check=False,
-            )
+            completed = self._invoke(command)
         except OSError as exc:
-            LOGGER.warning("fio unavailable: %s", exc)
-            return BenchmarkResult(test=spec.test, error=str(exc), workload_name=spec.label)
-
-        if completed.returncode != 0:
-            error = completed.stderr.strip() or f"fio exited with {completed.returncode}"
-            LOGGER.warning("fio workload failed: %s", error)
+            error = self._error_message(filename, f"Unable to execute fio: {exc}")
+            LOGGER.warning(error)
             return BenchmarkResult(test=spec.test, error=error, workload_name=spec.label)
 
+        if completed.returncode != 0:
+            stderr = completed.stderr.strip()
+            LOGGER.warning("fio stderr: %s", stderr or "<empty>")
+            LOGGER.debug("fio stdout: %s", completed.stdout.strip() or "<empty>")
+            if self._direct_io_unsupported(stderr, self.config.benchmark_direct_io):
+                fallback = [
+                    "--direct=0" if argument == "--direct=1" else argument for argument in command
+                ]
+                LOGGER.warning("Direct I/O failed for %s; retrying with buffered I/O", filename)
+                try:
+                    completed = self._invoke(fallback)
+                except OSError as exc:
+                    completed = subprocess.CompletedProcess(fallback, 1, "", str(exc))
+            if completed.returncode != 0:
+                error = completed.stderr.strip() or f"fio exited with {completed.returncode}"
+                error = self._error_message(filename, error)
+                LOGGER.warning("fio workload failed: %s", error)
+                return BenchmarkResult(test=spec.test, error=error, workload_name=spec.label)
+
         try:
+            LOGGER.debug("fio stdout: %s", completed.stdout.strip() or "<empty>")
+            LOGGER.debug("fio stderr: %s", completed.stderr.strip() or "<empty>")
             payload = json.loads(completed.stdout or "{}")
             return self._parse_result(spec, payload)
         except (json.JSONDecodeError, TypeError, ValueError, KeyError, AttributeError) as exc:
             LOGGER.warning("Invalid fio JSON for %s: %s", spec.test, exc)
             return BenchmarkResult(
-                test=spec.test, error=f"Invalid fio output: {exc}", workload_name=spec.label
+                test=spec.test,
+                error=self._error_message(filename, f"Invalid fio output: {exc}"),
+                workload_name=spec.label,
             )
+
+    def _invoke(self, command: list[str]) -> subprocess.CompletedProcess[str]:
+        """Execute fio with captured streams for diagnostics and parsing."""
+        return self.runner(command, capture_output=True, text=True, check=False)
+
+    @staticmethod
+    def _direct_io_unsupported(error: str, direct_io: bool) -> bool:
+        """Identify errors where buffered I/O is a safe compatibility fallback."""
+        if not direct_io:
+            return False
+        normalized = error.lower()
+        return any(
+            marker in normalized
+            for marker in (
+                "direct=",
+                "o_direct",
+                "direct io",
+                "direct i/o",
+                "operation not supported",
+                "invalid argument",
+            )
+        )
+
+    @staticmethod
+    def _error_message(filename: Path, error: str) -> str:
+        """Include the exact execution context in a user-facing error."""
+        return f"{error} (filesystem={filename.parent}, benchmark_file={filename})"
 
     @staticmethod
     def _parse_result(spec: BenchmarkSpec, payload: dict[str, Any]) -> BenchmarkResult:

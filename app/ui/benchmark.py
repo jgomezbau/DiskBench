@@ -190,13 +190,18 @@ class BenchmarkScreen(Screen[None]):
             metrics = f"Latency: {result.latency_ms:.2f} ms · IOPS: {result.iops:.0f}"
         self.query_one("#benchmark-metrics", Label).update(metrics)
         if result is not None:
-            throughput = f"{result.throughput_mib_per_second:.1f} MiB/s"
-            self.query_one("#benchmark-current", Label).update(
-                f"{disk_name} · {operation} · {throughput} · {result.iops:.0f} IOPS"
-            )
-            self.query_one("#benchmark-chart", Label).update(
-                result_charts([(operation, result.throughput_mib_per_second, 3500, "MiB/s")])
-            )
+            if result.success:
+                throughput = f"{result.throughput_mib_per_second:.1f} MiB/s"
+                self.query_one("#benchmark-current", Label).update(
+                    f"{disk_name} · {operation} · {throughput} · {result.iops:.0f} IOPS"
+                )
+                self.query_one("#benchmark-chart", Label).update(
+                    result_charts([(operation, result.throughput_mib_per_second, 3500, "MiB/s")])
+                )
+            else:
+                self.query_one("#benchmark-current", Label).update(
+                    f"{disk_name} · {operation} · {result.error}"
+                )
 
     def _finish(self, cancelled: bool) -> None:
         """Open the result screen after the worker has stopped."""
@@ -354,7 +359,7 @@ class BenchmarkResultsScreen(Screen[None]):
     @staticmethod
     def _throughput(result: BenchmarkResult | None) -> str:
         if result is None or not result.success:
-            return "Error"
+            return result.error if result is not None and result.error else "Error"
         return f"{result.throughput_mib_per_second:.1f} MiB/s"
 
     def action_export(self) -> None:

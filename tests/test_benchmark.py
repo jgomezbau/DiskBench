@@ -119,6 +119,31 @@ def test_invalid_fio_json_returns_a_failed_result(tmp_path: Path) -> None:
     assert all(not result.success for result in results.results)
 
 
+def test_direct_io_falls_back_to_buffered_io(tmp_path: Path) -> None:
+    direct_flags: list[str] = []
+
+    def direct_io_runner(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+        direct_flags.append(
+            next(argument for argument in command if argument.startswith("--direct="))
+        )
+        if "--direct=1" in command:
+            return subprocess.CompletedProcess(command, 1, "", "direct I/O not supported")
+        return _fio_process(command, **kwargs)
+
+    config = AppConfig(
+        fio_binary=sys.executable,
+        benchmark_profile="Quick",
+        benchmark_file_size_bytes=4 * 1024 * 1024,
+        benchmark_minimum_free_space_bytes=1,
+    )
+    disk = Disk(name="sda", model="Test SSD", mount_point=str(tmp_path))
+
+    results = FioBenchmarkService(config, runner=direct_io_runner).benchmark_disk(disk)
+
+    assert direct_flags == ["--direct=1", "--direct=0"] * 2
+    assert all(result.success for result in results.results)
+
+
 def test_benchmark_queue_updates_results_screen_and_history(tmp_path: Path) -> None:
     config = AppConfig(
         fio_binary=sys.executable,
