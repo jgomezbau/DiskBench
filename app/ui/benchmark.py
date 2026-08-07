@@ -39,6 +39,7 @@ class BenchmarkScreen(Screen[None]):
         self.cancel_event = Event()
         self.completed_results: list[DiskBenchmarkResults] = []
         self.started_at = 0.0
+        self.queue_started = False
 
     def compose(self) -> ComposeResult:
         yield HeaderBar()
@@ -57,6 +58,16 @@ class BenchmarkScreen(Screen[None]):
     def on_mount(self) -> None:
         """Start the queue after the progress screen has rendered."""
         self.started_at = time.monotonic()
+        if not self.benchmark_service.is_available():
+            message = (
+                f"fio is not installed or unavailable: {self.benchmark_service.config.fio_binary}"
+            )
+            LOGGER.warning(message)
+            self._show_message(message)
+            self.query_one("#cancel-benchmark", Button).label = "Close [ESC]"
+            return
+        LOGGER.info("Benchmark queue started for %d disk(s)", len(self.disks))
+        self.queue_started = True
         self.run_worker(self._run_queue, name="benchmark-queue", exclusive=True, thread=True)
 
     def _run_queue(self) -> None:
@@ -141,7 +152,10 @@ class BenchmarkScreen(Screen[None]):
     def _finish(self, cancelled: bool) -> None:
         """Open the result screen after the worker has stopped."""
         if cancelled:
+            LOGGER.info("Benchmark queue cancelled")
             self._show_message("Benchmark cancelled safely after the current operation")
+        else:
+            LOGGER.info("Benchmark queue completed")
         self.app.push_screen(BenchmarkResultsScreen(self.completed_results, self.history_store))
 
     def _show_message(self, message: str) -> None:
@@ -163,6 +177,10 @@ class BenchmarkScreen(Screen[None]):
 
     def action_cancel(self) -> None:
         """Request cancellation without interrupting a running fio process."""
+        if not self.queue_started:
+            self.app.pop_screen()
+            return
+        LOGGER.info("Benchmark cancellation requested")
         self.cancel_event.set()
 
 
@@ -242,6 +260,7 @@ class BenchmarkResultsScreen(Screen[None]):
             HistoryExporter.export(records, directory, file_format)
             for file_format in ("json", "csv", "md", "html")
         ]
+        LOGGER.info("Exported benchmark results to %s", directory)
         self.query_one("#export-message", Label).update(
             f"Exported {len(destinations)} reports to {directory}"
         )

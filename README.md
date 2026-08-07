@@ -57,7 +57,10 @@ with the previous run for that disk.
 
 `fio` is required only for benchmark execution. `smartctl`, `nvme-cli`,
 `lsblk`, `udevadm` and `blkid` are queried opportunistically according to
-their availability and permissions.
+their availability and permissions. DiskBench verifies `fio` before starting
+the worker and keeps the benchmark screen available with a friendly diagnostic
+when it is not installed. Benchmark starts, completion, cancellation, errors
+and exports are written to the application log.
 
 ## Keyboard shortcuts
 
@@ -72,7 +75,7 @@ their availability and permissions.
 | H | Open benchmark history |
 | R | Refresh inventory and hardware inspection |
 | Q | Quit |
-| Escape | Back or close the active dialog |
+| Escape | Cancel benchmark, or go back/close the active dialog |
 
 ## Roadmap
 

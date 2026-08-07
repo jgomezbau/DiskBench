@@ -39,6 +39,10 @@ class FioBenchmarkService:
         self.config = config or AppConfig()
         self.runner = runner
 
+    def is_available(self) -> bool:
+        """Return whether the configured fio executable is available."""
+        return shutil.which(self.config.fio_binary) is not None
+
     def benchmark_disk(
         self,
         disk: Disk,
@@ -48,6 +52,8 @@ class FioBenchmarkService:
         """Run all supported tests sequentially for one mounted disk."""
         mount_point = self._mount_point(disk)
         self._verify_space(mount_point)
+        self._ensure_available()
+        LOGGER.info("Benchmark started for %s", disk.name)
         results = DiskBenchmarkResults(
             disk_name=disk.name,
             model=disk.model,
@@ -68,6 +74,7 @@ class FioBenchmarkService:
             total = len(BENCHMARK_SPECS)
             for index, spec in enumerate(BENCHMARK_SPECS, start=1):
                 if cancel_event is not None and cancel_event.is_set():
+                    LOGGER.info("Benchmark cancelled for %s", disk.name)
                     raise BenchmarkError("Benchmark cancelled by user")
                 if progress is not None:
                     progress(spec.test.value, index - 1, total, None)
@@ -86,6 +93,7 @@ class FioBenchmarkService:
                         exc,
                     )
 
+        LOGGER.info("Benchmark completed for %s", disk.name)
         return results
 
     def _run_test(self, filename: Path, spec: BenchmarkSpec) -> BenchmarkResult:
@@ -125,19 +133,24 @@ class FioBenchmarkService:
         try:
             payload = json.loads(completed.stdout or "{}")
             return self._parse_result(spec, payload)
-        except (json.JSONDecodeError, TypeError, ValueError, KeyError) as exc:
+        except (json.JSONDecodeError, TypeError, ValueError, KeyError, AttributeError) as exc:
             LOGGER.warning("Invalid fio JSON for %s: %s", spec.test, exc)
             return BenchmarkResult(test=spec.test, error=f"Invalid fio output: {exc}")
 
     @staticmethod
     def _parse_result(spec: BenchmarkSpec, payload: dict[str, Any]) -> BenchmarkResult:
+        if not isinstance(payload, dict):
+            raise ValueError("fio output root was not an object")
         jobs = payload.get("jobs", [])
         if not jobs or not isinstance(jobs[0], dict):
             raise ValueError("fio output did not contain a job")
         direction = jobs[0].get("read" if spec.read_write in {"read", "randread"} else "write")
         if not isinstance(direction, dict):
             raise ValueError("fio output did not contain direction data")
-        latency = direction.get("lat_ns", {}).get("mean", 0)
+        latency_data = direction.get("lat_ns", {})
+        if not isinstance(latency_data, dict):
+            raise ValueError("fio output latency data was invalid")
+        latency = latency_data.get("mean", 0)
         return BenchmarkResult(
             test=spec.test,
             throughput_bytes_per_second=float(direction.get("bw_bytes", 0)),
@@ -153,6 +166,10 @@ class FioBenchmarkService:
             raise BenchmarkError(
                 f"Insufficient free space on {mount_point}: {usage.free} bytes available"
             )
+
+    def _ensure_available(self) -> None:
+        if not self.is_available():
+            raise BenchmarkError(f"fio is not installed or unavailable: {self.config.fio_binary}")
 
     @staticmethod
     def _mount_point(disk: Disk) -> Path:

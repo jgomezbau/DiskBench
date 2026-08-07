@@ -1,6 +1,7 @@
 """Benchmark history export formats."""
 
 import csv
+import html
 import json
 from io import StringIO
 from pathlib import Path
@@ -47,8 +48,12 @@ class HistoryExporter:
     @staticmethod
     def _html(records: list[dict[str, object]]) -> str:
         rows = "".join(
-            f"<tr><td>{record.get('completed_at', '--')}</td><td>{record.get('disk', '--')}</td>"
-            f"<td>{record.get('model', '--')}</td><td>{record.get('overall_score', 0)}</td></tr>"
+            "<tr>"
+            f"<td>{html.escape(str(record.get('completed_at', '--')))}</td>"
+            f"<td>{html.escape(str(record.get('disk', '--')))}</td>"
+            f"<td>{html.escape(str(record.get('model', '--')))}</td>"
+            f"<td>{html.escape(str(record.get('overall_score', 0)))}</td>"
+            "</tr>"
             for record in records
         )
         return (

@@ -14,6 +14,7 @@ All notable changes to DiskBench are documented here.
 - JSON, CSV, Markdown and HTML report export.
 - History screen and previous-run comparison for the same device.
 - Known-issue register and release roadmap.
+- Friendly `fio` dependency checks and benchmark lifecycle logging.
 
 ### Safety
 
