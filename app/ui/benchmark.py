@@ -1,0 +1,255 @@
+"""Benchmark queue and progress screen."""
+
+import logging
+import sqlite3
+import time
+from functools import partial
+from threading import Event
+
+from textual.app import ComposeResult
+from textual.containers import Container
+from textual.screen import Screen
+from textual.widgets import Button, DataTable, Label, ProgressBar
+
+from app.models.benchmark import BenchmarkResult, BenchmarkTest, DiskBenchmarkResults
+from app.models.disk import Disk
+from app.services.benchmark import BenchmarkError, FioBenchmarkService
+from app.services.history import HistoryStore
+from app.ui.footer import FooterBar
+from app.ui.header import HeaderBar
+
+LOGGER = logging.getLogger(__name__)
+
+
+class BenchmarkScreen(Screen[None]):
+    """Run selected disks sequentially in a background worker."""
+
+    BINDINGS = [("escape", "cancel", "Cancel")]
+
+    def __init__(
+        self,
+        disks: list[Disk],
+        benchmark_service: FioBenchmarkService,
+        history_store: HistoryStore,
+    ) -> None:
+        super().__init__()
+        self.disks = disks
+        self.benchmark_service = benchmark_service
+        self.history_store = history_store
+        self.cancel_event = Event()
+        self.completed_results: list[DiskBenchmarkResults] = []
+        self.started_at = 0.0
+
+    def compose(self) -> ComposeResult:
+        yield HeaderBar()
+        yield Container(
+            Label("BENCHMARK ENGINE", classes="section-title"),
+            Label("Temporary files only · sequential disk queue", classes="section-caption"),
+            Label("Preparing benchmark queue", id="benchmark-current"),
+            Label("Remaining disks: --", id="benchmark-remaining"),
+            ProgressBar(total=100, show_eta=False, id="benchmark-progress"),
+            Label("Elapsed: --   Estimated remaining: --", id="benchmark-timing"),
+            Button("Cancel benchmark [ESC]", id="cancel-benchmark"),
+            id="benchmark-content",
+        )
+        yield FooterBar()
+
+    def on_mount(self) -> None:
+        """Start the queue after the progress screen has rendered."""
+        self.started_at = time.monotonic()
+        self.run_worker(self._run_queue, name="benchmark-queue", exclusive=True, thread=True)
+
+    def _run_queue(self) -> None:
+        total = len(self.disks)
+        for disk_index, disk in enumerate(self.disks):
+            if self.cancel_event.is_set():
+                break
+            try:
+                results = self.benchmark_service.benchmark_disk(
+                    disk,
+                    progress=partial(self._progress, disk_index, total, disk.name),
+                    cancel_event=self.cancel_event,
+                )
+            except BenchmarkError as exc:
+                LOGGER.warning("Benchmark refused for %s: %s", disk.name, exc)
+                results = self._failed_results(disk, str(exc))
+            except Exception as exc:  # noqa: BLE001
+                LOGGER.exception("Unexpected benchmark failure for %s", disk.name)
+                results = self._failed_results(disk, f"Unexpected failure: {exc}")
+
+            self.completed_results.append(results)
+            try:
+                self.history_store.save(results)
+            except (OSError, ValueError, sqlite3.Error) as exc:
+                LOGGER.exception("Unable to save benchmark history for %s", disk.name)
+                self.app.call_from_thread(self._show_message, f"History save failed: {exc}")
+
+        self.app.call_from_thread(self._finish, self.cancel_event.is_set())
+
+    def _progress(
+        self,
+        disk_index: int,
+        disk_count: int,
+        disk_name: str,
+        operation: str,
+        completed_tests: int,
+        total_tests: int,
+        result: BenchmarkResult | None,
+    ) -> None:
+        overall = (
+            ((disk_index * total_tests) + completed_tests)
+            / max(
+                disk_count * total_tests,
+                1,
+            )
+            * 100
+        )
+        self.app.call_from_thread(
+            self._render_progress,
+            overall,
+            disk_name,
+            operation,
+            completed_tests,
+            result,
+        )
+
+    def _render_progress(
+        self,
+        overall: float,
+        disk_name: str,
+        operation: str,
+        completed_tests: int,
+        result: BenchmarkResult | None,
+    ) -> None:
+        self.query_one("#benchmark-progress", ProgressBar).update(progress=overall)
+        self.query_one("#benchmark-current", Label).update(f"{disk_name} · {operation}")
+        remaining = max(len(self.disks) - len(self.completed_results) - 1, 0)
+        self.query_one("#benchmark-remaining", Label).update(
+            f"Remaining disks: {remaining} · Test {completed_tests}/4"
+        )
+        elapsed = time.monotonic() - self.started_at
+        estimate = "--" if overall <= 0 else f"{elapsed * (100 / overall - 1):.0f}s"
+        self.query_one("#benchmark-timing", Label).update(
+            f"Elapsed: {elapsed:.0f}s   Estimated remaining: {estimate}"
+        )
+        if result is not None:
+            throughput = f"{result.throughput_mib_per_second:.1f} MiB/s"
+            self.query_one("#benchmark-current", Label).update(
+                f"{disk_name} · {operation} · {throughput} · {result.iops:.0f} IOPS"
+            )
+
+    def _finish(self, cancelled: bool) -> None:
+        """Open the result screen after the worker has stopped."""
+        if cancelled:
+            self._show_message("Benchmark cancelled safely after the current operation")
+        self.app.push_screen(BenchmarkResultsScreen(self.completed_results, self.history_store))
+
+    def _show_message(self, message: str) -> None:
+        self.query_one("#benchmark-current", Label).update(message)
+
+    @staticmethod
+    def _failed_results(disk: Disk, message: str) -> DiskBenchmarkResults:
+        return DiskBenchmarkResults(
+            disk_name=disk.name,
+            model=disk.model,
+            serial=disk.serial,
+            capacity=disk.capacity,
+            results=[BenchmarkResult(test=test, error=message) for test in BenchmarkTest],
+        )
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        if event.button.id == "cancel-benchmark":
+            self.action_cancel()
+
+    def action_cancel(self) -> None:
+        """Request cancellation without interrupting a running fio process."""
+        self.cancel_event.set()
+
+
+class BenchmarkResultsScreen(Screen[None]):
+    """Display completed benchmark results and export shortcuts."""
+
+    BINDINGS = [("escape", "back", "Back"), ("e", "export", "Export"), ("h", "history", "History")]
+
+    def __init__(
+        self,
+        results: list[DiskBenchmarkResults],
+        history_store: HistoryStore,
+    ) -> None:
+        super().__init__()
+        self.results = results
+        self.history_store = history_store
+
+    def compose(self) -> ComposeResult:
+        yield HeaderBar()
+        yield Container(
+            Label("BENCHMARK RESULTS", classes="section-title"),
+            Label("E exports JSON, CSV, Markdown, and HTML", classes="section-caption"),
+            DataTable(id="results-table"),
+            Label("", id="export-message"),
+            id="results-content",
+        )
+        yield FooterBar()
+
+    def on_mount(self) -> None:
+        table = self.query_one("#results-table", DataTable)
+        table.add_columns(
+            "DISK",
+            "MODEL",
+            "TEST",
+            "THROUGHPUT",
+            "IOPS",
+            "LATENCY",
+            "DURATION",
+            "SCORE",
+        )
+        for result in self.results:
+            for item in result.results:
+                table.add_row(
+                    result.disk_name,
+                    result.model,
+                    item.test.value,
+                    self._throughput(item),
+                    f"{item.iops:.0f}",
+                    f"{item.latency_ms:.2f} ms" if item.success else "--",
+                    f"{item.duration_seconds:.1f} s" if item.success else "--",
+                    f"{result.overall_score:.1f}",
+                )
+
+    @staticmethod
+    def _throughput(result: BenchmarkResult | None) -> str:
+        if result is None or not result.success:
+            return "Error"
+        return f"{result.throughput_mib_per_second:.1f} MiB/s"
+
+    def action_export(self) -> None:
+        """Export the in-memory result set in every supported report format."""
+        from app.services.export import HistoryExporter
+
+        records = [
+            {
+                "disk": result.disk_name,
+                "model": result.model,
+                "serial": result.serial,
+                "capacity": result.capacity,
+                "completed_at": result.completed_at,
+                "overall_score": result.overall_score,
+            }
+            for result in self.results
+        ]
+        directory = self.history_store.directory
+        destinations = [
+            HistoryExporter.export(records, directory, file_format)
+            for file_format in ("json", "csv", "md", "html")
+        ]
+        self.query_one("#export-message", Label).update(
+            f"Exported {len(destinations)} reports to {directory}"
+        )
+
+    def action_history(self) -> None:
+        from app.ui.history import HistoryScreen
+
+        self.app.push_screen(HistoryScreen(self.history_store))
+
+    def action_back(self) -> None:
+        self.app.pop_screen()

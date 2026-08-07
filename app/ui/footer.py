@@ -11,6 +11,6 @@ class FooterBar(Horizontal):
     def compose(self) -> ComposeResult:
         yield Label(
             "↑↓ Navigate   SPACE Select   ENTER Details   CTRL+A All   "
-            "CTRL+D Clear   R Refresh   Q Quit   ESC Back",
+            "CTRL+D Clear   B Benchmark   H History   R Refresh   Q Quit   ESC Back",
             id="shortcuts",
         )

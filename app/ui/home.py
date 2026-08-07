@@ -2,6 +2,7 @@
 
 import logging
 from functools import partial
+from pathlib import Path
 
 from textual.app import ComposeResult
 from textual.containers import Container
@@ -10,12 +11,16 @@ from textual.screen import Screen
 from textual.widgets import Label
 
 from app.models.disk import Disk
+from app.services.benchmark import FioBenchmarkService
 from app.services.detect import DetectionError, LsblkDetectionService
+from app.services.history import HistoryStore
 from app.services.nvme import NvmeService
 from app.services.smart import SmartService
+from app.ui.benchmark import BenchmarkScreen
 from app.ui.dialogs import DiskDetailsDialog
 from app.ui.footer import FooterBar
 from app.ui.header import HeaderBar
+from app.ui.history import HistoryScreen
 from app.ui.widgets import EmptyState, StorageTable
 
 LOGGER = logging.getLogger(__name__)
@@ -29,11 +34,15 @@ class HomeScreen(Screen[None]):
         detector: LsblkDetectionService,
         smart_service: SmartService | None = None,
         nvme_service: NvmeService | None = None,
+        benchmark_service: FioBenchmarkService | None = None,
+        history_store: HistoryStore | None = None,
     ) -> None:
         super().__init__()
         self.detector = detector
         self.smart_service = smart_service or SmartService()
         self.nvme_service = nvme_service or NvmeService()
+        self.benchmark_service = benchmark_service or FioBenchmarkService()
+        self.history_store = history_store or HistoryStore(Path("history"))
 
     def on_mount(self) -> None:
         """Start slow hardware queries after the first table render."""
@@ -170,4 +179,16 @@ class HomeScreen(Screen[None]):
             self.app.push_screen(
                 DiskDetailsDialog(table.disks[table.cursor_row], focus_target=table)
             )
+            event.stop()
+        elif key == "b":
+            selected = [disk for disk in table.disks if disk.name in table.selected]
+            if not selected and 0 <= table.cursor_row < len(table.disks):
+                selected = [table.disks[table.cursor_row]]
+            if selected:
+                self.app.push_screen(
+                    BenchmarkScreen(selected, self.benchmark_service, self.history_store)
+                )
+            event.stop()
+        elif key == "h":
+            self.app.push_screen(HistoryScreen(self.history_store))
             event.stop()

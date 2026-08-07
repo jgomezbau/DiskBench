@@ -11,6 +11,6 @@ build/
 dist/
 *.egg-info/
 *.log
+history/
 .idea/
 .vscode/
-

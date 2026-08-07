@@ -24,3 +24,8 @@ DiskDetailsDialog { align: center middle; background: rgba(0, 0, 0, 0.72); }
 .detail-value { width: 1fr; padding: 0 1; }
 #dialog-shortcut { color: #e5c07b; text-style: bold; margin: 1 0; }
 #close-dialog { dock: bottom; width: 18; margin-top: 1; }
+#benchmark-content, #results-content, #history-content, #comparison-content { margin: 1 2; padding: 1 2; border: solid #303a49; background: #141a22; }
+#benchmark-progress { margin: 1 0; }
+#benchmark-current, #benchmark-remaining, #benchmark-timing, #export-message, #history-message { color: #d8dee9; margin: 1 0; }
+#cancel-benchmark { margin-top: 1; }
+#results-table, #history-table, #comparison-table { height: 1fr; border: solid #364153; }

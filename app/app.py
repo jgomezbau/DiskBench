@@ -3,7 +3,9 @@
 from textual.app import App
 
 from app.config import AppConfig
+from app.services.benchmark import FioBenchmarkService
 from app.services.detect import LsblkDetectionService
+from app.services.history import HistoryStore
 from app.services.nvme import NvmeService
 from app.services.smart import SmartService
 from app.ui.home import HomeScreen
@@ -25,4 +27,14 @@ class DiskBenchApp(App[None]):
     def on_mount(self) -> None:
         """Push the dashboard once the app has a running event loop."""
         detector = LsblkDetectionService(self.config)
-        self.push_screen(HomeScreen(detector, SmartService(self.config), NvmeService(self.config)))
+        benchmark_service = FioBenchmarkService(self.config)
+        history_store = HistoryStore(self.config.history_directory)
+        self.push_screen(
+            HomeScreen(
+                detector,
+                SmartService(self.config),
+                NvmeService(self.config),
+                benchmark_service,
+                history_store,
+            )
+        )

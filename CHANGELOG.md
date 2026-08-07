@@ -2,6 +2,25 @@
 
 All notable changes to DiskBench are documented here.
 
+## [0.5.0] - 2026-08-07
+
+### Added
+
+- Safe `fio` benchmark engine for sequential and random 4K read/write tests.
+- Sequential multi-disk benchmark queue with cancellation and background workers.
+- Live progress, throughput, IOPS, elapsed time and estimated remaining time.
+- Per-disk result screen with latency, duration and overall throughput score.
+- JSON and SQLite history persistence under `history/`.
+- JSON, CSV, Markdown and HTML report export.
+- History screen and previous-run comparison for the same device.
+- Known-issue register and release roadmap.
+
+### Safety
+
+- Benchmarks require a mounted filesystem and a free-space threshold.
+- Workloads use temporary files and clean them up after each disk.
+- No benchmark opens a whole block device or overwrites an existing file.
+
 ## [0.4.0] - 2026-08-07
 
 ### Added
