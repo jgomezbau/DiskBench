@@ -2,6 +2,16 @@
 
 All notable changes to DiskBench are documented here.
 
+## [0.4.0] - 2026-08-07
+
+### Added
+
+- Complete hardware inspection data flow from detection models to the details dialog.
+- Interface and partition-table metadata in the disk model and details view.
+- JSON filesystem and UUID fallback through `blkid`.
+- Injectable SMART and NVMe command runners for deterministic service testing.
+- Robust handling of malformed JSON and whitespace-only hardware fields.
+
 ## [0.3.0] - 2026-08-07
 
 ### Added

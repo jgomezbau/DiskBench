@@ -3,6 +3,7 @@
 import json
 import logging
 import subprocess
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -11,6 +12,7 @@ from app.config import AppConfig
 from app.models.disk import NvmeInfo
 
 LOGGER = logging.getLogger(__name__)
+Runner = Callable[..., subprocess.CompletedProcess[str]]
 
 
 @dataclass(slots=True)
@@ -26,8 +28,13 @@ class NvmeResult:
 class NvmeService:
     """Own nvme-cli calls and cache controller metadata."""
 
-    def __init__(self, config: AppConfig | None = None) -> None:
+    def __init__(
+        self,
+        config: AppConfig | None = None,
+        runner: Runner = subprocess.run,
+    ) -> None:
         self.config = config or AppConfig()
+        self.runner = runner
         self._cache: dict[str, NvmeResult] = {}
 
     def inspect(self, device: str, force_refresh: bool = False) -> NvmeResult | None:
@@ -47,7 +54,7 @@ class NvmeService:
         ]
         LOGGER.info("Querying NVMe controller: %s", " ".join(command))
         try:
-            result = subprocess.run(command, capture_output=True, text=True, check=False)
+            result = self.runner(command, capture_output=True, text=True, check=False)
             payload = json.loads(result.stdout or "{}")
             if not isinstance(payload, dict):
                 payload = {}

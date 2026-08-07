@@ -68,7 +68,9 @@ class Disk:
     logical_sector_size: str = "--"
     physical_sector_size: str = "--"
     bus: str = "Unknown"
+    interface: str = "Unknown"
     uuid: str = "--"
+    partition_table: str = "--"
     rotational: bool | None = None
     removable: bool | None = None
     trim_support: str = "Unknown"

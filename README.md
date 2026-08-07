@@ -1,6 +1,6 @@
 # DiskBench
 
-DiskBench is a Linux-first terminal application for professional storage inspection and, in future releases, safe disk benchmarking. `v0.3` provides read-only hardware discovery; benchmark execution is deliberately not part of this release.
+DiskBench is a Linux-first terminal application for professional storage inspection and, in future releases, safe disk benchmarking. `v0.4` provides read-only hardware inspection; benchmark execution is deliberately not part of this release.
 
 ## Installation
 
@@ -33,7 +33,7 @@ The service accepts an injectable subprocess runner, which makes detection deter
 
 ## Hardware detection
 
-Detection uses `lsblk --json` for the initial inventory, `/sys/block` for rotational and discard capabilities, and `udevadm` for bus and vendor fallbacks. Virtual `loop`, `ram`, `zram`, and `dm-` devices are ignored. NVMe, SATA SSD, USB SSD, USB HDD, mechanical HDD, eMMC, SD cards, USB flash drives, and optical drives receive distinct classifications when the kernel exposes enough metadata.
+Detection uses `lsblk --json` for the initial inventory, `blkid --output json` for filesystem fallbacks, `/sys/block` for rotational and discard capabilities, and `udevadm` for bus, interface, vendor, and model fallbacks. Virtual `loop`, `ram`, `zram`, and `dm-` devices are ignored. NVMe, SATA SSD, USB SSD, USB HDD, mechanical HDD, eMMC, SD cards, USB flash drives, and optical drives receive distinct classifications when the kernel exposes enough metadata.
 
 ## SMART and NVMe
 
@@ -58,7 +58,8 @@ Detection uses `lsblk --json` for the initial inventory, `/sys/block` for rotati
 - `v0.1-alpha`: architecture, physical-device detection, inventory table, selection, and details.
 - `v0.2`: refresh, selection preservation, and background hardware enrichment.
 - `v0.3`: SMART health, temperatures, NVMe metadata, storage classification, and grouped hardware details.
-- `v0.4`: historical results, comparison views, and report export.
+- `v0.4`: complete hardware inspection data flow, filesystem fallbacks, interface and partition-table metadata, and testable SMART/NVMe services.
+- `v0.5`: historical results, comparison views, and report export.
 - `v1.0`: stable plugin boundaries, packaging, complete test coverage, and release documentation.
 
 ## License

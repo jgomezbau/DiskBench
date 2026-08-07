@@ -41,13 +41,20 @@ class LsblkDetectionService:
             "--bytes",
             "--output",
             "NAME,SIZE,MODEL,VENDOR,SERIAL,REV,TRAN,TYPE,FSTYPE,MOUNTPOINT,"
-            "ROTA,RM,LOG-SEC,PHY-SEC,UUID,DISC-GRAN,PARTTYPE",
+            "ROTA,RM,LOG-SEC,PHY-SEC,UUID,DISC-GRAN,PARTTYPE,PARTTYPENAME,PTTYPE",
         ]
         LOGGER.info("Querying block devices: %s", " ".join(command))
         try:
             result = self.runner(command, capture_output=True, text=True, check=True)
             payload = json.loads(result.stdout)
-        except (OSError, subprocess.SubprocessError, json.JSONDecodeError) as exc:
+            if not isinstance(payload, dict):
+                raise ValueError("lsblk JSON root is not an object")
+        except (
+            OSError,
+            ValueError,
+            subprocess.SubprocessError,
+            json.JSONDecodeError,
+        ) as exc:
             LOGGER.exception("lsblk detection failed")
             raise DetectionError(f"Unable to read storage devices: {exc}") from exc
 
@@ -70,7 +77,9 @@ class LsblkDetectionService:
         rotational = self._rotational(name, item.get("rota"))
         transport = self._transport(item.get("tran"), properties)
         bus = self._bus(name, transport, properties)
+        interface = self._interface(name, transport, properties)
         trim_support = "Supported" if self._integer(item.get("disc-gran")) > 0 else "Unknown"
+        blkid_data = self._blkid_metadata(name) if not item.get("uuid") else {}
 
         return Disk(
             name=name,
@@ -89,7 +98,12 @@ class LsblkDetectionService:
             transport=transport,
             filesystem=filesystems[0] if filesystems else "Unknown",
             mount_point=mounts[0] if mounts else "Not mounted",
-            uuid=self._value(item.get("uuid"), "--"),
+            uuid=self._value(item.get("uuid"), blkid_data.get("UUID", "--")),
+            partition_table=self._value(
+                item.get("pttype"),
+                item.get("parttypename", "--"),
+            ),
+            interface=interface,
             rotation=(
                 Rotation.ROTATIONAL
                 if rotational is True
@@ -102,13 +116,22 @@ class LsblkDetectionService:
         )
 
     def _parse_partition(self, item: dict[str, Any]) -> Partition:
+        partition_name = self._value(item.get("name"), "Unknown")
+        needs_blkid = not item.get("fstype") or not item.get("uuid")
+        blkid_data = self._blkid_metadata(partition_name) if needs_blkid else {}
         return Partition(
-            name=self._value(item.get("name"), "Unknown"),
-            filesystem=self._value(item.get("fstype")),
+            name=partition_name,
+            filesystem=self._value(
+                item.get("fstype"),
+                blkid_data.get("TYPE", "Unknown"),
+            ),
             mount_point=self._value(item.get("mountpoint"), "Not mounted"),
             capacity=self._format_bytes(item.get("size")),
-            uuid=self._value(item.get("uuid"), "--"),
-            partition_table=self._value(item.get("parttype"), "--"),
+            uuid=self._value(item.get("uuid"), blkid_data.get("UUID", "--")),
+            partition_table=self._value(
+                item.get("parttypename"),
+                item.get("parttype", "--"),
+            ),
         )
 
     def _rotational(self, name: str, fallback: Any) -> bool | None:
@@ -138,6 +161,21 @@ class LsblkDetectionService:
             for key, value in [line.split("=", 1)]
         }
 
+    def _blkid_metadata(self, name: str) -> dict[str, str]:
+        """Read JSON filesystem metadata when lsblk does not expose it."""
+        command = [self.config.blkid_binary, "--output", "json", f"/dev/{name}"]
+        LOGGER.info("Querying filesystem metadata: %s", " ".join(command))
+        try:
+            result = self.runner(command, capture_output=True, text=True, check=False)
+            payload = json.loads(result.stdout or "{}")
+        except (OSError, json.JSONDecodeError) as exc:
+            LOGGER.warning("blkid unavailable for %s: %s", name, exc)
+            return {}
+        if not isinstance(payload, dict):
+            return {}
+        devices = payload.get("blockdevices", [])
+        return devices[0] if devices and isinstance(devices[0], dict) else {}
+
     def _sysfs_value(self, name: str, relative_path: str) -> str:
         path = self.sysfs_root / name / relative_path
         LOGGER.info("Querying sysfs metadata: %s", path)
@@ -157,17 +195,29 @@ class LsblkDetectionService:
         return transport
 
     @staticmethod
+    def _interface(name: str, transport: str, properties: dict[str, str]) -> str:
+        if name.startswith("nvme"):
+            return "PCIe"
+        if properties.get("ID_ATA_BUS"):
+            return properties["ID_ATA_BUS"].upper()
+        return transport
+
+    @staticmethod
     def _transport(value: Any, properties: dict[str, str]) -> str:
         if value:
-            return str(value).upper()
+            normalized = str(value).strip()
+            if normalized:
+                return normalized.upper()
         if properties.get("ID_BUS"):
-            return properties["ID_BUS"].upper()
+            return properties["ID_BUS"].strip().upper() or "Unknown"
         return "Unknown"
 
     @staticmethod
     def _value(value: Any, default: str = "Unknown") -> str:
         if value not in (None, ""):
-            return str(value).strip()
+            normalized = str(value).strip()
+            if normalized:
+                return normalized
         return default
 
     @staticmethod

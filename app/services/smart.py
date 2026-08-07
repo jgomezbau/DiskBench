@@ -3,6 +3,7 @@
 import json
 import logging
 import subprocess
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
@@ -10,6 +11,7 @@ from app.config import AppConfig
 from app.models.disk import HealthStatus
 
 LOGGER = logging.getLogger(__name__)
+Runner = Callable[..., subprocess.CompletedProcess[str]]
 
 
 @dataclass(slots=True)
@@ -31,8 +33,13 @@ class SmartResult:
 class SmartService:
     """Own every smartctl invocation and cache its normalized result."""
 
-    def __init__(self, config: AppConfig | None = None) -> None:
+    def __init__(
+        self,
+        config: AppConfig | None = None,
+        runner: Runner = subprocess.run,
+    ) -> None:
         self.config = config or AppConfig()
+        self.runner = runner
         self._cache: dict[str, SmartResult] = {}
 
     def inspect(self, device: str, force_refresh: bool = False) -> SmartResult:
@@ -44,7 +51,7 @@ class SmartService:
         command = [self.config.smartctl_binary, "--json", "--all", f"/dev/{device}"]
         LOGGER.info("Querying SMART data: %s", " ".join(command))
         try:
-            result = subprocess.run(
+            result = self.runner(
                 command,
                 capture_output=True,
                 text=True,
@@ -58,6 +65,8 @@ class SmartService:
 
         try:
             payload = json.loads(result.stdout or "{}")
+            if not isinstance(payload, dict):
+                payload = {}
         except json.JSONDecodeError as exc:
             LOGGER.warning("Invalid smartctl JSON for %s: %s", device, exc)
             payload = {}

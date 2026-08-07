@@ -41,6 +41,7 @@ class DiskDetailsDialog(ModalScreen[None]):
                     ("Serial number", self.disk.serial_number),
                     ("Firmware version", self.disk.firmware_version),
                     ("Bus", self.disk.bus),
+                    ("Interface", self.disk.interface),
                     ("Transport", self.disk.transport),
                     ("Removable", self._boolean(self.disk.removable)),
                 ],
@@ -53,6 +54,7 @@ class DiskDetailsDialog(ModalScreen[None]):
                     ("Physical sector", self.disk.physical_sector_size),
                     ("Rotational", self._boolean(self.disk.rotational)),
                     ("TRIM support", self.disk.trim_support),
+                    ("Partition table", self.disk.partition_table),
                 ],
             ),
             (
