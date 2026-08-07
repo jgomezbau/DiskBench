@@ -14,7 +14,7 @@ class AppConfig:
     """Settings shared by the composition root and services."""
 
     application_name: str = "DiskBench"
-    version: str = "v0.7"
+    version: str = "v0.7.1"
     lsblk_binary: str = "lsblk"
     blkid_binary: str = "blkid"
     smartctl_binary: str = "smartctl"

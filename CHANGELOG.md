@@ -2,6 +2,15 @@
 
 All notable changes to DiskBench are documented here.
 
+## [0.7.1] - 2026-08-07
+
+### Fixed
+
+- Refresh disk and mount metadata immediately before each benchmark.
+- Select the largest writable supported filesystem without ever using a raw block device.
+- Reopen persisted runs through the same Results Dashboard used by live benchmarks.
+- Complete screen-specific navigation, shortcuts and breadcrumbs.
+
 ## [0.7.0] - 2026-08-07
 
 ### Added

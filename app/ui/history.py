@@ -2,6 +2,7 @@
 
 from textual.app import ComposeResult
 from textual.containers import Container, Horizontal
+from textual.events import Key
 from textual.screen import Screen
 from textual.widgets import Button, DataTable, Input, Label
 
@@ -10,9 +11,9 @@ from app.services.export import HistoryExporter
 from app.services.history import HistoryFilter, HistoryStore
 from app.services.report import ReportGenerator
 from app.services.scoring import ComparisonService, MetricComparison
+from app.ui.benchmark import BenchmarkResultsScreen
 from app.ui.footer import FooterBar
 from app.ui.header import HeaderBar
-from app.ui.results import BenchmarkDetailScreen
 from app.utils.charts import result_charts
 
 
@@ -68,6 +69,7 @@ class HistoryScreen(Screen[None]):
 
     def on_mount(self) -> None:
         self._render_records(self.store.list_runs())
+        self.query_one("#history-table", DataTable).focus()
 
     def _render_records(self, records: list[dict[str, object]]) -> None:
         self.records = records
@@ -91,6 +93,12 @@ class HistoryScreen(Screen[None]):
             self._apply_filters()
         elif event.button.id == "save-metadata":
             self.action_save_metadata()
+
+    def on_key(self, event: Key) -> None:
+        """Keep Enter reliable while the history table owns keyboard focus."""
+        if event.key == "enter":
+            self.action_details()
+            event.stop()
 
     def _apply_filters(self) -> None:
         values = {
@@ -147,7 +155,7 @@ class HistoryScreen(Screen[None]):
         table = self.query_one("#history-table", DataTable)
         result = self.store.to_results(self.records[table.cursor_row])
         if result.results:
-            self.app.push_screen(BenchmarkDetailScreen(result, result.results[0]))
+            self.app.push_screen(BenchmarkResultsScreen([result], self.store))
 
     def _selected_record(self) -> dict[str, object] | None:
         if not self.records:

@@ -1,6 +1,6 @@
 # DiskBench
 
-DiskBench is a Linux-first terminal application for professional storage inspection and safe disk benchmarking. `v0.7` adds configurable workload profiles, queue controls, live metrics, analysis and history metadata to the controlled `fio` benchmark engine.
+DiskBench is a Linux-first terminal application for professional storage inspection and safe disk benchmarking. `v0.7.1` stabilizes mounted-filesystem resolution, history reopening and screen navigation for the controlled `fio` benchmark engine.
 
 ## Installation
 
@@ -52,10 +52,11 @@ sequential read, sequential write, random read 4K and random write 4K. Tests
 use a temporary file on a mounted filesystem, verify free space first, and
 remove the file in a cleanup block. Disk devices are never opened directly.
 
-`MountResolver` selects a writable directory on the selected disk, preferring
-`/home`, `/`, `/run/media`, `/media` and `/mnt`. It rejects boot, optical,
-squashfs, swap, tmpfs and read-only filesystems; raw block-device paths are
-never passed to `fio`.
+`MountResolver` refreshes the selected disk immediately before benchmarking and
+uses `findmnt` with `lsblk`/`blkid` metadata. It selects the largest writable
+directory on that disk, preferring `/home`, `/`, `/run/media`, `/media` and
+`/mnt` for ties. It rejects boot, optical, squashfs, swap, tmpfs and
+read-only filesystems; raw block-device paths are never passed to `fio`.
 
 Benchmark work runs in a Textual background worker. The progress screen shows
 the active disk, test, throughput, IOPS, elapsed time and estimated remaining
@@ -124,6 +125,7 @@ Before execution DiskBench verifies `fio`, the mounted filesystem, writability a
 - `v0.5`: safe fio benchmarks, historical results, comparison views, and report export.
 - `v0.6`: results dashboard, score calculation, filters, trend charts, PDF reports, and persistent settings.
 - `v0.7`: professional profiles, configurable fio parameters, queue controls, live metrics, analysis, and history metadata.
+- `v0.7.1`: fresh mount resolution, filesystem compatibility, SQLite results reopening, and consistent navigation.
 - `v1.0`: stable plugin boundaries, packaging, complete test coverage, and release documentation.
 
 ## License

@@ -30,3 +30,20 @@ def test_resolver_rejects_non_filesystems() -> None:
 
     with pytest.raises(MountResolutionError, match="This device is not mounted"):
         MountResolver().resolve(disk)
+
+
+def test_resolver_refreshes_disk_before_selecting_mount(tmp_path: Path) -> None:
+    fresh_directory = tmp_path / "fresh"
+    fresh_directory.mkdir()
+    stale = Disk(name="sdc", mount_point="/boot")
+    fresh = Disk(
+        name="sdc",
+        mount_point="Not mounted",
+        partitions=[Partition("sdc1", filesystem="ntfs", mount_point=str(fresh_directory))],
+    )
+
+    class Detector:
+        def detect(self) -> list[Disk]:
+            return [fresh]
+
+    assert MountResolver(detector=Detector()).resolve(stale) == fresh_directory
