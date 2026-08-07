@@ -10,6 +10,41 @@ from app.models.disk import Disk, NvmeInfo
 from app.ui.widgets import StorageTable
 
 
+class BenchmarkProfileDialog(ModalScreen[str | None]):
+    """Choose an existing benchmark profile before opening the queue."""
+
+    BINDINGS = [("escape", "close", "Close")]
+
+    def __init__(self, current_profile: str = "Standard") -> None:
+        super().__init__()
+        self.current_profile = current_profile
+
+    def compose(self) -> ComposeResult:
+        profiles = ("Quick", "Standard", "Extended", "Custom")
+        yield Container(
+            Label("SELECT BENCHMARK PROFILE", id="profile-dialog-title"),
+            Label("Choose a workload profile to start the selected disk queue."),
+            *(
+                Button(
+                    f"{profile}{'  (current)' if profile == self.current_profile else ''}",
+                    id=f"profile-{profile.lower()}",
+                    variant="primary" if profile == self.current_profile else "default",
+                )
+                for profile in profiles
+            ),
+            Label("ESC Cancel", id="profile-dialog-shortcut"),
+            id="profile-dialog",
+        )
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        if event.button.id and event.button.id.startswith("profile-"):
+            self.dismiss(event.button.id.removeprefix("profile-").title())
+
+    def action_close(self) -> None:
+        """Return to Home without starting a benchmark."""
+        self.dismiss(None)
+
+
 class DetailValue(Label):
     """Label exposing a plain-text value for tests and live updates."""
 

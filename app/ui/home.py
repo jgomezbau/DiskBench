@@ -1,6 +1,7 @@
 """Main dashboard screen."""
 
 import logging
+from dataclasses import replace
 from functools import partial
 
 from textual.app import ComposeResult
@@ -17,7 +18,7 @@ from app.services.history import HistoryStore
 from app.services.nvme import NvmeService
 from app.services.smart import SmartService
 from app.ui.benchmark import BenchmarkScreen
-from app.ui.dialogs import DiskDetailsDialog
+from app.ui.dialogs import BenchmarkProfileDialog, DiskDetailsDialog
 from app.ui.footer import FooterBar
 from app.ui.header import HeaderBar
 from app.ui.history import HistoryScreen
@@ -60,6 +61,11 @@ class HomeScreen(Screen[None]):
         yield Container(
             Label("PHYSICAL STORAGE", classes="section-title"),
             Label("Select a device to inspect its metadata", classes="section-caption"),
+            Label(
+                "SPACE Select   ENTER Details   B Benchmark   H History   E Export   "
+                "S Settings   R Refresh   Q Quit",
+                id="home-actions",
+            ),
             Container(self._content(), id="table-host"),
             id="content",
         )
@@ -189,12 +195,13 @@ class HomeScreen(Screen[None]):
             event.stop()
         elif key == "b":
             selected = [disk for disk in table.disks if disk.name in table.selected]
-            if not selected and 0 <= table.cursor_row < len(table.disks):
-                selected = [table.disks[table.cursor_row]]
             if selected:
                 self.app.push_screen(
-                    BenchmarkScreen(selected, self.benchmark_service, self.history_store)
+                    BenchmarkProfileDialog(self.config.benchmark_profile),
+                    callback=partial(self._start_benchmark, selected),
                 )
+            else:
+                self.app.notify("No disk selected.", severity="warning")
             event.stop()
         elif key == "h":
             self.app.push_screen(HistoryScreen(self.history_store))
@@ -202,3 +209,14 @@ class HomeScreen(Screen[None]):
         elif key == "s":
             self.app.push_screen(SettingsDialog(self.config))
             event.stop()
+        elif key == "e":
+            self.app.push_screen(HistoryScreen(self.history_store))
+            event.stop()
+
+    def _start_benchmark(self, disks: list[Disk], profile: str | None) -> None:
+        """Apply the chosen profile and open the existing benchmark queue."""
+        if profile is None:
+            return
+        self.config = replace(self.config, benchmark_profile=profile)
+        self.benchmark_service.config = self.config
+        self.app.push_screen(BenchmarkScreen(disks, self.benchmark_service, self.history_store))

@@ -45,3 +45,9 @@ class DiskBenchApp(App[None]):
                 self.config,
             )
         )
+
+    def action_refresh(self) -> None:
+        """Delegate the global refresh shortcut to the active dashboard."""
+        screen = self.screen
+        if isinstance(screen, HomeScreen):
+            self.call_after_refresh(screen.action_refresh)
