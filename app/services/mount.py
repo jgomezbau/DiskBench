@@ -55,15 +55,33 @@ class MountResolver:
 
     def resolve(self, disk: Disk) -> Path:
         """Return a writable mountpoint or raise a user-facing resolution error."""
+        LOGGER.debug(
+            "Selected disk: device=/dev/%s parent=-- partitions=%s filesystem=%s " "mountpoint=%s",
+            disk.name,
+            [partition.name for partition in disk.partitions],
+            disk.filesystem,
+            disk.mount_point,
+        )
         current_disk = self._current_disk(disk)
-        candidates = self._candidates(current_disk)
-        mount_options = self._mount_options()
+        mount_info = self._mount_info()
+        candidates = self._candidates(current_disk, mount_info)
+        mount_options = {record["target"]: record["options"] for record in mount_info}
         viable: list[MountCandidate] = []
         for candidate in candidates:
             if not self._is_viable(candidate, mount_options):
                 continue
             writable_path = self._writable_path(candidate.path)
             if writable_path is not None:
+                LOGGER.debug(
+                    "Writable candidate: device=/dev/%s partition=%s filesystem=%s "
+                    "mountpoint=%s writable=%s free_bytes=%d",
+                    current_disk.name,
+                    candidate.partition,
+                    candidate.filesystem,
+                    candidate.path,
+                    writable_path,
+                    self._available(writable_path),
+                )
                 viable.append(replace(candidate, path=writable_path))
         if not viable:
             LOGGER.warning("No writable mountpoint found for %s", disk.name)
@@ -114,42 +132,144 @@ class MountResolver:
         if current is None:
             LOGGER.warning("Selected disk disappeared before benchmark: %s", disk.name)
             raise MountResolutionError("This device is not mounted.")
+        LOGGER.debug(
+            "Current selected disk: device=/dev/%s partitions=%s filesystem=%s mountpoint=%s",
+            current.name,
+            [partition.name for partition in current.partitions],
+            current.filesystem,
+            current.mount_point,
+        )
         return current
 
-    def _candidates(self, disk: Disk) -> list[MountCandidate]:
-        candidates: list[MountCandidate] = []
+    def _candidates(
+        self, disk: Disk, mount_info: list[dict[str, str]] | None = None
+    ) -> list[MountCandidate]:
+        candidates: dict[tuple[str, str], MountCandidate] = {}
         for partition in disk.partitions:
-            candidates.append(
+            self._add_candidate(
+                candidates,
                 MountCandidate(
                     Path(partition.mount_point), partition.filesystem, partition=partition.name
-                )
+                ),
             )
-        candidates.append(
-            MountCandidate(Path(disk.mount_point), disk.filesystem, partition=disk.name)
+        self._add_candidate(
+            candidates,
+            MountCandidate(Path(disk.mount_point), disk.filesystem, partition=disk.name),
         )
-        unique: dict[str, MountCandidate] = {}
-        for candidate in candidates:
-            if str(candidate.path) not in self._placeholders:
-                unique[str(candidate.path)] = candidate
-        return list(unique.values())
+        known_mounts = {
+            partition.name: partition.mount_point
+            for partition in disk.partitions
+            if partition.mount_point not in self._placeholders
+        }
+        if disk.mount_point not in self._placeholders:
+            known_mounts[disk.name] = disk.mount_point
+        for record in mount_info or []:
+            source = record["source"]
+            partition_name = self._matching_partition(source, disk)
+            if partition_name is None:
+                continue
+            if partition_name in known_mounts:
+                LOGGER.debug(
+                    "Ignoring duplicate mount record: partition=%s lsblk_mountpoint=%s "
+                    "findmnt_mountpoint=%s",
+                    partition_name,
+                    known_mounts[partition_name],
+                    record["target"],
+                )
+                continue
+            candidate = MountCandidate(
+                Path(record["target"]),
+                record["fstype"] or "Unknown",
+                record["options"],
+                partition_name,
+            )
+            LOGGER.debug(
+                "Discovered mounted partition: device=/dev/%s source=%s filesystem=%s "
+                "mountpoint=%s options=%s",
+                disk.name,
+                source,
+                candidate.filesystem,
+                candidate.path,
+                candidate.options,
+            )
+            self._add_candidate(candidates, candidate)
+        return list(candidates.values())
+
+    def _add_candidate(
+        self, candidates: dict[tuple[str, str], MountCandidate], candidate: MountCandidate
+    ) -> None:
+        if str(candidate.path) in self._placeholders:
+            return
+        key = (str(candidate.path), candidate.partition)
+        candidates[key] = candidate
+        LOGGER.debug(
+            "Mount candidate: partition=%s filesystem=%s mountpoint=%s options=%s",
+            candidate.partition,
+            candidate.filesystem,
+            candidate.path,
+            candidate.options or "--",
+        )
+
+    @staticmethod
+    def _matching_partition(source: str, disk: Disk) -> str | None:
+        """Match a findmnt source to the selected disk or one of its partitions."""
+        normalized_source = source.removeprefix("/dev/")
+        names = {disk.name, *(partition.name for partition in disk.partitions)}
+        if normalized_source in names:
+            return normalized_source
+        for partition in disk.partitions:
+            if partition.uuid and partition.uuid != "--":
+                if normalized_source == f"UUID={partition.uuid}":
+                    return partition.name
+                if normalized_source.endswith(f"/{partition.uuid}"):
+                    return partition.name
+        return None
 
     def _is_viable(self, candidate: MountCandidate, mount_options: dict[str, str]) -> bool:
         path = candidate.path
         filesystem = candidate.filesystem.lower().strip()
-        if filesystem in self._rejected_filesystems or self._is_rejected_mount(path):
+        if filesystem in self._rejected_filesystems:
+            LOGGER.debug(
+                "Rejected mount candidate: partition=%s mountpoint=%s reason=filesystem:%s",
+                candidate.partition,
+                path,
+                filesystem,
+            )
+            return False
+        if self._is_rejected_mount(path):
+            LOGGER.debug(
+                "Rejected mount candidate: partition=%s mountpoint=%s reason=protected path",
+                candidate.partition,
+                path,
+            )
             return False
         if not path.is_dir():
+            LOGGER.debug(
+                "Rejected mount candidate: partition=%s mountpoint=%s reason=not a directory",
+                candidate.partition,
+                path,
+            )
             return False
         options = candidate.options or mount_options.get(str(path), "")
-        return "ro" not in {option.strip().lower() for option in options.split(",")}
+        if "ro" in {option.strip().lower() for option in options.split(",")}:
+            LOGGER.debug(
+                "Rejected mount candidate: partition=%s mountpoint=%s reason=read-only options=%s",
+                candidate.partition,
+                path,
+                options,
+            )
+            return False
+        return True
 
     def _writable_path(self, mountpoint: Path) -> Path | None:
         """Find a writable directory without crossing the selected filesystem."""
         try:
             mount_device = mountpoint.stat().st_dev
-        except OSError:
+        except OSError as exc:
+            LOGGER.debug("Rejected mountpoint=%s reason=stat failed: %s", mountpoint, exc)
             return None
         if os.access(mountpoint, os.W_OK):
+            LOGGER.debug("Writable mountpoint=%s", mountpoint)
             return mountpoint
 
         home = Path.home()
@@ -158,6 +278,7 @@ class MountResolver:
             and self._same_device(home, mount_device)
             and os.access(home, os.W_OK)
         ):
+            LOGGER.debug("Using writable home directory=%s for mountpoint=%s", home, mountpoint)
             return home
 
         try:
@@ -171,7 +292,10 @@ class MountResolver:
                 and self._same_device(child, mount_device)
                 and os.access(child, os.W_OK)
             ):
+                LOGGER.debug("Using writable child=%s for mountpoint=%s", child, mountpoint)
                 return child
+            LOGGER.debug("Rejected child directory=%s for mountpoint=%s", child, mountpoint)
+        LOGGER.debug("Rejected mountpoint=%s reason=no writable directory", mountpoint)
         return None
 
     @staticmethod
@@ -191,16 +315,26 @@ class MountResolver:
             "--output",
             "TARGET,FSTYPE,OPTIONS,SOURCE",
         ]
+        LOGGER.debug("Querying mount information: %s", " ".join(command))
         try:
             result = self.runner(command, capture_output=True, text=True, check=False)
             payload = json.loads(result.stdout or "{}")
             records = self._flatten_mounts(payload.get("filesystems", []))
             if records:
+                LOGGER.debug("Mount information records=%d", len(records))
+                for record in records:
+                    LOGGER.debug(
+                        "Mount record: source=%s target=%s filesystem=%s options=%s",
+                        record["source"],
+                        record["target"],
+                        record["fstype"],
+                        record["options"],
+                    )
                 return records
         except (OSError, json.JSONDecodeError, TypeError, ValueError) as exc:
             LOGGER.warning("findmnt unavailable or invalid: %s", exc)
         try:
-            return [
+            records = [
                 {
                     "target": partition.mountpoint,
                     "fstype": partition.fstype,
@@ -209,6 +343,8 @@ class MountResolver:
                 }
                 for partition in psutil.disk_partitions(all=True)
             ]
+            LOGGER.debug("Mount information fallback records=%d", len(records))
+            return records
         except OSError as exc:
             LOGGER.warning("Unable to inspect mounted filesystems: %s", exc)
             return []

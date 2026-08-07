@@ -1,5 +1,7 @@
 """Tests for safe benchmark mountpoint resolution."""
 
+import json
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -47,3 +49,30 @@ def test_resolver_refreshes_disk_before_selecting_mount(tmp_path: Path) -> None:
             return [fresh]
 
     assert MountResolver(detector=Detector()).resolve(stale) == fresh_directory
+
+
+def test_resolver_uses_findmnt_when_lsblk_has_no_mountpoint(tmp_path: Path) -> None:
+    """A mounted partition must remain discoverable when lsblk is stale."""
+    disk = Disk(
+        name="sdb",
+        model="SSK Storage",
+        mount_point="Not mounted",
+        partitions=[Partition("sdb3", filesystem="ntfs", mount_point="Not mounted")],
+    )
+    mount_payload = {
+        "filesystems": [
+            {
+                "target": str(tmp_path),
+                "source": "/dev/sdb3",
+                "fstype": "ntfs",
+                "options": "rw,relatime",
+            }
+        ]
+    }
+
+    def runner(*_args: object, **_kwargs: object) -> subprocess.CompletedProcess[str]:
+        return subprocess.CompletedProcess(
+            args=["findmnt"], returncode=0, stdout=json.dumps(mount_payload), stderr=""
+        )
+
+    assert MountResolver(runner=runner).resolve(disk) == tmp_path
