@@ -1,0 +1,31 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "diskbench"
+version = "0.1.0a0"
+description = "Linux storage analysis and benchmarking TUI"
+requires-python = ">=3.12"
+dependencies = ["psutil>=5.9,<8.0", "rich>=13.7,<16.0", "textual>=0.50,<1.0"]
+
+[tool.black]
+line-length = 100
+target-version = ["py312"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "SIM"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+warn_unused_ignores = true
+exclude = ["tests"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
