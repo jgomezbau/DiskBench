@@ -1,0 +1,17 @@
+Screen { background: #10141b; color: #d8dee9; }
+HeaderBar, FooterBar { height: 3; background: #171d26; border: solid #303a49; padding: 1 2; }
+#brand { color: #83d6c5; text-style: bold; width: 20; }
+#release, #shortcuts { color: #8290a5; }
+#shortcuts { text-align: center; width: 1fr; }
+#content { margin: 1 2; padding: 1 2; border: solid #303a49; background: #141a22; }
+.section-title { color: #83d6c5; text-style: bold; }
+.section-caption { color: #8290a5; margin-bottom: 1; }
+#storage-table { height: 1fr; border: solid #364153; }
+DataTable > .datatable--header { background: #202936; color: #83d6c5; text-style: bold; }
+DataTable > .datatable--cursor { background: #263447; color: #ffffff; }
+#empty-state { height: 1fr; content-align: center middle; color: #8290a5; }
+DiskDetailsDialog { align: center middle; background: rgba(0, 0, 0, 0.72); }
+#details-dialog { width: 76; height: 70%; padding: 1 2; border: double #83d6c5; background: #171d26; }
+#dialog-title { color: #83d6c5; text-style: bold; margin-bottom: 1; }
+.detail-line { color: #d8dee9; padding: 0 1; }
+#close-dialog { dock: bottom; width: 18; margin-top: 1; }
