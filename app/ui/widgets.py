@@ -122,6 +122,8 @@ class StorageTable(DataTable[TextType]):
             return Text("● OK", style="bold #98c379")
         if disk.smart_overall_health is HealthStatus.WARNING:
             return Text("● Warning", style="bold #e5c07b")
+        if disk.smart_overall_health is HealthStatus.NOT_SUPPORTED:
+            return Text("● Not Supported", style="#8290a5")
         return Text("● Unknown", style="bold #e5c07b")
 
     def _restore_cursor(self) -> None:

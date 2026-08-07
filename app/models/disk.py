@@ -19,6 +19,7 @@ class HealthStatus(StrEnum):
     WARNING = "Warning"
     CRITICAL = "Critical"
     UNKNOWN = "Unknown"
+    NOT_SUPPORTED = "Not Supported"
 
 
 @dataclass(slots=True)
@@ -61,6 +62,7 @@ class Disk:
     serial: str = "Not available"
     firmware: str = "Not available"
     capacity: str = "Unknown"
+    size: int = 0
     transport: str = "Unknown"
     filesystem: str = "Unknown"
     mount_point: str = "Not mounted"
@@ -79,7 +81,7 @@ class Disk:
     power_cycles: str = "--"
     smart_supported: bool | None = None
     smart_enabled: bool | None = None
-    smart_overall_health: HealthStatus = HealthStatus.UNKNOWN
+    smart_overall_health: HealthStatus = HealthStatus.NOT_SUPPORTED
     benchmark_results: dict[str, str] = field(default_factory=dict)
     partitions: list[Partition] = field(default_factory=list)
     nvme: NvmeInfo | None = None
@@ -119,3 +121,13 @@ class Disk:
     def firmware_version(self) -> str:
         """Return the firmware version using the public hardware terminology."""
         return self.firmware
+
+    @property
+    def health(self) -> HealthStatus:
+        """Return the normalized health status."""
+        return self.smart_overall_health
+
+    @property
+    def smart_status(self) -> str:
+        """Return the health status using the legacy public name."""
+        return self.smart_overall_health.value

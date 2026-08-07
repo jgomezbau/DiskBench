@@ -119,6 +119,11 @@ class HomeScreen(Screen[None]):
         tables = self.query("#storage-table")
         if tables:
             tables.first(StorageTable).update_disk(disk)
+        if (
+            isinstance(self.app.screen, DiskDetailsDialog)
+            and self.app.screen.disk.name == disk.name
+        ):
+            self.app.screen.update_disk(disk)
 
     @staticmethod
     def _build_content(disks: list[Disk]) -> StorageTable | EmptyState:

@@ -4,10 +4,12 @@ import json
 import subprocess
 from pathlib import Path
 
-from app.models.disk import HealthStatus
+from app.models.disk import Disk, HealthStatus
 from app.services.detect import LsblkDetectionService
 from app.services.nvme import NvmeService
 from app.services.smart import SmartService
+from app.ui.dialogs import DiskDetailsDialog
+from app.ui.widgets import StorageTable
 
 
 def process(
@@ -26,6 +28,7 @@ def test_detection_uses_sysfs_and_blkid_fallbacks(tmp_path: Path) -> None:
             {
                 "name": "sda",
                 "type": "disk",
+                "size": "1000000",
                 "model": " ",
                 "tran": " ",
                 "children": [{"name": "sda1", "fstype": "", "uuid": ""}],
@@ -45,8 +48,13 @@ def test_detection_uses_sysfs_and_blkid_fallbacks(tmp_path: Path) -> None:
             )
         return process(command, {"blockdevices": [{"TYPE": "ext4", "UUID": "abc"}]})
 
-    disk = LsblkDetectionService(runner=runner, sysfs_root=tmp_path).detect()[0]
+    detect_service = LsblkDetectionService(runner=runner, sysfs_root=tmp_path)
+    disks = detect_service.get_disks()
+    disk = disks[0]
     assert disk.model == "Fallback SSD"
+    assert len(disk.model) > 0
+    assert disk.size > 0
+    assert disk.health is not None
     assert disk.interface == "ATA"
     assert disk.rotational is False
     assert disk.partitions[0].filesystem == "ext4"
@@ -79,6 +87,15 @@ def test_smart_service_normalizes_and_caches_health() -> None:
     assert first.power_on_hours == "123 h"
 
 
+def test_smart_service_reports_unavailable_as_not_supported() -> None:
+    def missing_runner(*args: object, **kwargs: object) -> subprocess.CompletedProcess[str]:
+        raise FileNotFoundError("smartctl")
+
+    result = SmartService(runner=missing_runner).inspect("nvme0n1")
+
+    assert result.health is HealthStatus.NOT_SUPPORTED
+
+
 def test_nvme_service_reads_json_controller_data() -> None:
     payload = {
         "mn": "Example NVMe",
@@ -98,3 +115,18 @@ def test_nvme_service_reads_json_controller_data() -> None:
     assert result.info.nvme_version == "1.4"
     assert result.info.namespace_count == "1"
     assert result.info.controller_id == "3"
+
+
+def test_details_dialog_exposes_populated_values() -> None:
+    disk = Disk(
+        name="nvme0n1",
+        vendor="Samsung",
+        model="Samsung NVMe",
+        filesystem="ext4",
+        mount_point="/",
+    )
+    dialog = DiskDetailsDialog(disk, focus_target=StorageTable([]))
+
+    assert dialog.vendor.text != ""
+    assert dialog.model.text != ""
+    assert dialog.filesystem.text != ""

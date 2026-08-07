@@ -64,6 +64,10 @@ class LsblkDetectionService:
             if self._is_physical(item)
         ]
 
+    def get_disks(self) -> list[Disk]:
+        """Compatibility alias for callers using the original service API."""
+        return self.detect()
+
     def _is_physical(self, item: dict[str, Any]) -> bool:
         name = str(item.get("name") or "")
         return item.get("type") in {"disk", "rom"} and not name.startswith(self.excluded_prefixes)
@@ -80,6 +84,22 @@ class LsblkDetectionService:
         interface = self._interface(name, transport, properties)
         trim_support = "Supported" if self._integer(item.get("disc-gran")) > 0 else "Unknown"
         blkid_data = self._blkid_metadata(name) if not item.get("uuid") else {}
+        filesystem = (
+            filesystems[0]
+            if filesystems
+            else self._value(
+                item.get("fstype"),
+                properties.get("ID_FS_TYPE", "--"),
+            )
+        )
+        mount_point = (
+            mounts[0]
+            if mounts
+            else self._value(
+                item.get("mountpoint"),
+                "Not mounted",
+            )
+        )
 
         return Disk(
             name=name,
@@ -92,13 +112,17 @@ class LsblkDetectionService:
             ),
             firmware=self._value(item.get("rev"), "Not available"),
             capacity=self._format_bytes(item.get("size")),
+            size=self._integer(item.get("size")),
             logical_sector_size=self._sector_size(item.get("log-sec")),
             physical_sector_size=self._sector_size(item.get("phy-sec")),
             bus=bus,
             transport=transport,
-            filesystem=filesystems[0] if filesystems else "Unknown",
-            mount_point=mounts[0] if mounts else "Not mounted",
-            uuid=self._value(item.get("uuid"), blkid_data.get("UUID", "--")),
+            filesystem=filesystem,
+            mount_point=mount_point,
+            uuid=self._value(
+                item.get("uuid"),
+                blkid_data.get("UUID", properties.get("ID_FS_UUID", "--")),
+            ),
             partition_table=self._value(
                 item.get("pttype"),
                 item.get("parttypename", "--"),

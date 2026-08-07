@@ -20,7 +20,7 @@ class SmartResult:
 
     supported: bool | None = None
     enabled: bool | None = None
-    health: HealthStatus = HealthStatus.UNKNOWN
+    health: HealthStatus = HealthStatus.NOT_SUPPORTED
     temperature: str = "--"
     power_on_hours: str = "--"
     power_cycles: str = "--"
@@ -90,11 +90,18 @@ class SmartService:
         nvme_log = self._mapping(payload.get("nvme_smart_health_information_log"))
         passed = smart_status.get("passed")
         critical_warning = self._integer(nvme_log.get("critical_warning"))
+        supported = smart_support.get("available")
         health = (
-            HealthStatus.HEALTHY
-            if passed is True
-            else HealthStatus.CRITICAL if passed is False else HealthStatus.UNKNOWN
+            HealthStatus.NOT_SUPPORTED
+            if supported is False
+            else (
+                HealthStatus.HEALTHY
+                if passed is True
+                else HealthStatus.CRITICAL if passed is False else HealthStatus.UNKNOWN
+            )
         )
+        if supported is None and not smart_status and not nvme_log:
+            health = HealthStatus.NOT_SUPPORTED
         if health is HealthStatus.UNKNOWN and critical_warning > 0:
             health = HealthStatus.WARNING
         return SmartResult(
