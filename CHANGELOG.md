@@ -2,6 +2,17 @@
 
 All notable changes to DiskBench are documented here.
 
+## [0.3.0] - 2026-08-07
+
+### Added
+
+- Hardware discovery from lsblk JSON, sysfs, udevadm, smartctl, and nvme-cli.
+- Dedicated cached `SmartService` and `NvmeService` integrations.
+- SMART health, temperature, power-on hours, power cycles, and NVMe controller data.
+- Background hardware inspection workers with graceful missing-tool handling.
+- Grouped General, Storage, Filesystem, SMART, Health, NVMe, and Partition Table details.
+- SSD, HDD, NVMe, eMMC, SD, USB, and optical-device classification.
+
 ## [0.1.0-alpha] - 2026-08-07
 
 ### Added

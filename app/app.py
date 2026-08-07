@@ -4,6 +4,8 @@ from textual.app import App
 
 from app.config import AppConfig
 from app.services.detect import LsblkDetectionService
+from app.services.nvme import NvmeService
+from app.services.smart import SmartService
 from app.ui.home import HomeScreen
 from app.utils.logger import configure_logging
 
@@ -13,7 +15,7 @@ class DiskBenchApp(App[None]):
 
     TITLE = "DiskBench"
     CSS_PATH = "ui/theme.tcss"
-    BINDINGS = [("q", "quit", "Quit")]
+    BINDINGS = [("q", "quit", "Quit"), ("r", "refresh", "Refresh")]
 
     def __init__(self, config: AppConfig | None = None) -> None:
         self.config = config or AppConfig()
@@ -23,4 +25,4 @@ class DiskBenchApp(App[None]):
     def on_mount(self) -> None:
         """Push the dashboard once the app has a running event loop."""
         detector = LsblkDetectionService(self.config)
-        self.push_screen(HomeScreen(detector))
+        self.push_screen(HomeScreen(detector, SmartService(self.config), NvmeService(self.config)))
