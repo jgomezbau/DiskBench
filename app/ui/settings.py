@@ -11,6 +11,7 @@ from textual.screen import ModalScreen
 from textual.widgets import Button, Input, Label
 
 from app.config import AppConfig
+from app.ui.footer import FooterBar
 
 LOGGER = logging.getLogger(__name__)
 
@@ -18,7 +19,7 @@ LOGGER = logging.getLogger(__name__)
 class SettingsDialog(ModalScreen[None]):
     """Edit benchmark, storage and presentation settings."""
 
-    BINDINGS = [("escape", "close", "Close")]
+    BINDINGS = [("escape", "close", "Close"), ("q", "close", "Back")]
 
     def __init__(self, config: AppConfig) -> None:
         super().__init__()
@@ -66,6 +67,7 @@ class SettingsDialog(ModalScreen[None]):
                 self._field("Theme (dark/light)", "theme", self.config.theme),
             ),
             Label("Settings are persisted as JSON and used after restart", id="settings-hint"),
+            FooterBar("ESC Back   Q Back   TAB Next option   ENTER Save"),
             Horizontal(
                 Button("Save", variant="primary", id="save-settings"),
                 Button("Cancel [ESC]", id="cancel-settings"),

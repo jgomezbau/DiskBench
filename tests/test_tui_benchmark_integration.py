@@ -14,7 +14,7 @@ from app.services.benchmark import FioBenchmarkService
 from app.services.history import HistoryStore
 from app.services.nvme import NvmeService
 from app.services.smart import SmartService
-from app.ui.benchmark import BenchmarkResultsScreen
+from app.ui.benchmark import BenchmarkResultsScreen, BenchmarkScreen
 from app.ui.dialogs import BenchmarkProfileDialog
 from app.ui.home import HomeScreen
 
@@ -70,6 +70,13 @@ def test_home_benchmark_flow_reaches_results_and_sqlite(tmp_path: Path) -> None:
             await pilot.press("b")
             await pilot.pause()
             assert isinstance(app.screen, BenchmarkProfileDialog)
+            await pilot.press("q")
+            await pilot.pause()
+            assert app.screen.query_one(HomeScreen)
+
+            await pilot.press("b")
+            await pilot.pause()
+            assert isinstance(app.screen, BenchmarkProfileDialog)
             await pilot.click("#profile-quick")
             for _ in range(30):
                 await pilot.pause()
@@ -77,6 +84,15 @@ def test_home_benchmark_flow_reaches_results_and_sqlite(tmp_path: Path) -> None:
                     break
             assert isinstance(app.screen, BenchmarkResultsScreen)
             assert app.screen.query_one("#results-table").row_count == 2
+            await pilot.press("q")
+            await pilot.pause()
+            assert isinstance(app.screen, BenchmarkScreen)
+            await pilot.press("q")
+            await pilot.pause()
+            assert app.screen.query_one(HomeScreen)
+            await pilot.press("q")
+            await pilot.pause()
+            assert not app.is_running
 
     asyncio.run(exercise())
     records = history.list_runs()

@@ -36,6 +36,7 @@ class BenchmarkScreen(Screen[None]):
         ("p", "pause_resume", "Pause/Resume"),
         ("x", "skip", "Skip"),
         ("t", "retry", "Retry"),
+        ("q", "back", "Back"),
     ]
 
     def __init__(
@@ -58,7 +59,7 @@ class BenchmarkScreen(Screen[None]):
         self.queue_started = False
 
     def compose(self) -> ComposeResult:
-        yield HeaderBar()
+        yield HeaderBar("Home > Benchmark")
         yield Container(
             Label("BENCHMARK ENGINE", classes="section-title"),
             Label("Temporary files only · sequential disk queue", classes="section-caption"),
@@ -77,7 +78,7 @@ class BenchmarkScreen(Screen[None]):
             ),
             id="benchmark-content",
         )
-        yield FooterBar()
+        yield FooterBar("ESC Cancel   Q Back")
 
     def on_mount(self) -> None:
         """Start the queue after the progress screen has rendered."""
@@ -205,9 +206,11 @@ class BenchmarkScreen(Screen[None]):
 
     def _finish(self, cancelled: bool) -> None:
         """Open the result screen after the worker has stopped."""
+        self.queue_started = False
         if cancelled:
             LOGGER.info("Benchmark queue cancelled")
-            self._show_message("Benchmark cancelled safely after the current operation")
+            self.app.pop_screen()
+            return
         else:
             LOGGER.info("Benchmark queue completed")
         self.app.push_screen(BenchmarkResultsScreen(self.completed_results, self.history_store))
@@ -245,6 +248,10 @@ class BenchmarkScreen(Screen[None]):
         self.cancel_event.set()
         self.pause_event.set()
 
+    def action_back(self) -> None:
+        """Cancel safely and return to the previous screen."""
+        self.action_cancel()
+
     def action_pause_resume(self) -> None:
         """Pause or resume at the next safe workload boundary."""
         if self.pause_event.is_set():
@@ -271,6 +278,7 @@ class BenchmarkResultsScreen(Screen[None]):
         ("e", "export", "Export"),
         ("h", "history", "History"),
         ("enter", "details", "Details"),
+        ("q", "back", "Back"),
     ]
 
     def __init__(
@@ -284,7 +292,7 @@ class BenchmarkResultsScreen(Screen[None]):
         self.row_results: list[tuple[DiskBenchmarkResults, BenchmarkResult]] = []
 
     def compose(self) -> ComposeResult:
-        yield HeaderBar()
+        yield HeaderBar("Home > Benchmark > Results")
         yield Container(
             Label("BENCHMARK RESULTS", classes="section-title"),
             Label("E exports CSV, JSON, Markdown, HTML and PDF", classes="section-caption"),
@@ -294,7 +302,7 @@ class BenchmarkResultsScreen(Screen[None]):
             Label("", id="export-message"),
             id="results-content",
         )
-        yield FooterBar()
+        yield FooterBar("ESC Back   Q Back   E Export   H History   ENTER Details")
 
     def on_mount(self) -> None:
         table = self.query_one("#results-table", DataTable)

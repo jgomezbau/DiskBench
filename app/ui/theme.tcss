@@ -2,6 +2,7 @@ Screen { background: #10141b; color: #d8dee9; }
 HeaderBar, FooterBar { height: 3; background: #171d26; border: solid #303a49; padding: 1 2; }
 #brand { color: #83d6c5; text-style: bold; width: 20; }
 #release, #shortcuts { color: #8290a5; }
+#breadcrumb { color: #e5c07b; width: 1fr; text-align: right; }
 #shortcuts { text-align: center; width: 1fr; }
 #content { margin: 1 2; padding: 1 2; border: solid #303a49; background: #141a22; }
 #home-actions { color: #e5c07b; margin-bottom: 1; padding: 0 1; border: solid #303a49; }
@@ -49,3 +50,4 @@ DiskDetailsDialog { align: center middle; background: rgba(0, 0, 0, 0.72); }
 .theme-light #content, .theme-light #benchmark-content, .theme-light #results-content, .theme-light #history-content, .theme-light #comparison-content { background: #ffffff; border: solid #9aa5b1; }
 .theme-light #brand, .theme-light .section-title { color: #0b7285; }
 .theme-light #release, .theme-light #shortcuts, .theme-light .section-caption { color: #52606d; }
+.theme-light #breadcrumb { color: #9a6700; }

@@ -31,6 +31,8 @@ LOGGER = logging.getLogger(__name__)
 class HomeScreen(Screen[None]):
     """Inventory dashboard and keyboard interaction boundary."""
 
+    BINDINGS = [("q", "quit_application", "Quit"), ("r", "refresh", "Refresh")]
+
     def __init__(
         self,
         detector: LsblkDetectionService,
@@ -57,7 +59,7 @@ class HomeScreen(Screen[None]):
         self._start_inspection()
 
     def compose(self) -> ComposeResult:
-        yield HeaderBar()
+        yield HeaderBar("Home")
         yield Container(
             Label("PHYSICAL STORAGE", classes="section-title"),
             Label("Select a device to inspect its metadata", classes="section-caption"),
@@ -69,7 +71,10 @@ class HomeScreen(Screen[None]):
             Container(self._content(), id="table-host"),
             id="content",
         )
-        yield FooterBar()
+        yield FooterBar(
+            "↑↓ Navigate   SPACE Select   ENTER Details   B Benchmark   H History   "
+            "S Settings   R Refresh   Q Quit"
+        )
 
     def _content(self) -> StorageTable | EmptyState:
         return self._build_content(self._detect())
@@ -172,6 +177,10 @@ class HomeScreen(Screen[None]):
         await host.remove_children()
         await host.mount(self._build_content(disks))
         self._start_inspection()
+
+    def action_quit_application(self) -> None:
+        """Quit only from the Home screen."""
+        self.app.exit()
 
     def on_key(self, event: Key) -> None:
         key = event.key

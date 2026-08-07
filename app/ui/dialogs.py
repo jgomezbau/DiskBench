@@ -7,13 +7,14 @@ from textual.screen import ModalScreen
 from textual.widgets import Button, Label
 
 from app.models.disk import Disk, NvmeInfo
+from app.ui.footer import FooterBar
 from app.ui.widgets import StorageTable
 
 
 class BenchmarkProfileDialog(ModalScreen[str | None]):
     """Choose an existing benchmark profile before opening the queue."""
 
-    BINDINGS = [("escape", "close", "Close")]
+    BINDINGS = [("escape", "close", "Close"), ("q", "close", "Back")]
 
     def __init__(self, current_profile: str = "Standard") -> None:
         super().__init__()
@@ -33,6 +34,7 @@ class BenchmarkProfileDialog(ModalScreen[str | None]):
                 for profile in profiles
             ),
             Label("ESC Cancel", id="profile-dialog-shortcut"),
+            FooterBar("ESC Back   Q Back   ENTER Select   TAB Next option"),
             id="profile-dialog",
         )
 
@@ -62,7 +64,7 @@ class DetailValue(Label):
 class DiskDetailsDialog(ModalScreen[None]):
     """Show hardware, filesystem, SMART, health, NVMe, and partition data."""
 
-    BINDINGS = [("escape", "close", "Close")]
+    BINDINGS = [("escape", "close", "Close"), ("q", "close", "Back")]
 
     def __init__(self, disk: Disk, focus_target: StorageTable) -> None:
         super().__init__()
@@ -84,6 +86,7 @@ class DiskDetailsDialog(ModalScreen[None]):
             Label(f"DEVICE DETAILS  /  {self.disk.device_path}", id="dialog-title"),
             VerticalScroll(*self._sections()),
             Label("ESC Back", id="dialog-shortcut"),
+            FooterBar("ESC Back   Q Back"),
             Button("Close  [ESC]", variant="primary", id="close-dialog"),
             id="details-dialog",
         )

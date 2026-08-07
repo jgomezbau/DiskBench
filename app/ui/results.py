@@ -14,7 +14,7 @@ from app.utils.charts import result_charts
 class BenchmarkDetailScreen(Screen[None]):
     """Show every collected metric for one benchmark workload."""
 
-    BINDINGS = [("escape", "back", "Back")]
+    BINDINGS = [("escape", "back", "Back"), ("q", "back", "Back")]
 
     def __init__(self, disk_results: DiskBenchmarkResults, result: BenchmarkResult) -> None:
         super().__init__()
@@ -22,7 +22,7 @@ class BenchmarkDetailScreen(Screen[None]):
         self.result = result
 
     def compose(self) -> ComposeResult:
-        yield HeaderBar()
+        yield HeaderBar("Home > Benchmark > Results > Details")
         yield Container(
             Label("BENCHMARK DETAIL", classes="section-title"),
             Label(
@@ -36,7 +36,7 @@ class BenchmarkDetailScreen(Screen[None]):
             ),
             id="benchmark-detail-content",
         )
-        yield FooterBar()
+        yield FooterBar("ESC Back   Q Back")
 
     def _charts(self) -> str:
         return result_charts(

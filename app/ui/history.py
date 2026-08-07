@@ -24,9 +24,10 @@ class HistoryScreen(Screen[None]):
         ("e", "export", "Export"),
         ("c", "compare", "Compare"),
         ("enter", "details", "Details"),
+        ("q", "back", "Back"),
         ("n", "rename", "Rename"),
         ("f", "favorite", "Favorite"),
-        ("d", "delete", "Delete"),
+        ("delete", "delete", "Delete"),
     ]
 
     def __init__(self, store: HistoryStore) -> None:
@@ -35,7 +36,7 @@ class HistoryScreen(Screen[None]):
         self.records: list[dict[str, object]] = []
 
     def compose(self) -> ComposeResult:
-        yield HeaderBar()
+        yield HeaderBar("Home > History")
         yield Container(
             Label("BENCHMARK HISTORY", classes="section-title"),
             Label(
@@ -61,7 +62,9 @@ class HistoryScreen(Screen[None]):
             Label("", id="history-message"),
             id="history-content",
         )
-        yield FooterBar()
+        yield FooterBar(
+            "ENTER Open   ESC Back   Q Back   E Export   C Compare   DEL Delete   F Favorite"
+        )
 
     def on_mount(self) -> None:
         self._render_records(self.store.list_runs())
@@ -230,7 +233,7 @@ class HistoryScreen(Screen[None]):
 class HistoryComparisonScreen(Screen[None]):
     """Compare two benchmark runs and show direction, delta and trend charts."""
 
-    BINDINGS = [("escape", "back", "Back"), ("p", "report", "PDF")]
+    BINDINGS = [("escape", "back", "Back"), ("q", "back", "Back"), ("p", "report", "PDF")]
 
     def __init__(
         self,
@@ -245,7 +248,7 @@ class HistoryComparisonScreen(Screen[None]):
         self.comparisons: list[MetricComparison] = []
 
     def compose(self) -> ComposeResult:
-        yield HeaderBar()
+        yield HeaderBar("Home > History > Benchmark Details")
         yield Container(
             Label("BENCHMARK COMPARISON", classes="section-title"),
             Label(f"{self.current.disk_name} · current vs previous", classes="section-caption"),
@@ -254,7 +257,7 @@ class HistoryComparisonScreen(Screen[None]):
             Label("P generates a PDF comparison report", id="comparison-message"),
             id="comparison-content",
         )
-        yield FooterBar()
+        yield FooterBar("ESC Back   Q Back   P PDF")
 
     def on_mount(self) -> None:
         service = ComparisonService()

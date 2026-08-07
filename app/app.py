@@ -17,7 +17,6 @@ class DiskBenchApp(App[None]):
 
     TITLE = "DiskBench"
     CSS_PATH = "ui/theme.tcss"
-    BINDINGS = [("q", "quit", "Quit"), ("r", "refresh", "Refresh")]
 
     def __init__(self, config: AppConfig | None = None) -> None:
         self.config = config or AppConfig.load()
@@ -45,9 +44,3 @@ class DiskBenchApp(App[None]):
                 self.config,
             )
         )
-
-    def action_refresh(self) -> None:
-        """Delegate the global refresh shortcut to the active dashboard."""
-        screen = self.screen
-        if isinstance(screen, HomeScreen):
-            self.call_after_refresh(screen.action_refresh)
